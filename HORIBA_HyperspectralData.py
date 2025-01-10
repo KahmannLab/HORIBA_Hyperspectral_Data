@@ -447,12 +447,12 @@ def plot_com_map(original_data, processed_data=None, lambda1=None, lambda2=None,
 
 
 #%% Mark points of interest on the map
-def point_marker(map_data,original_data, XY,data_type):
+def point_marker(map_data,original_data, YX,data_type):
     """
     Mark the points of interest on the map
     :param map_data (np.ndarray): the dataset of map
     :param original_data (LumiSpectrum): the original data read by hyperspy used to provide the scale information
-    :param XY (list): the list of the coordinates of the points of interest (X, Y)
+    :param YX (list): the list of the coordinates of the points of interest (Y,X)
     :param data_type (str): the type of the map data, it could be 'PLCOM', 'RamanCOM', 'PLIntint', 'RamanIntint', 'PLInt', and 'RamanInt',
     'PLRatio', 'RamanRatio'
     :return: fig (matplotlib.figure.Figure): the new figure object with markers,
@@ -475,9 +475,9 @@ def point_marker(map_data,original_data, XY,data_type):
     cmap=ax.imshow(map_data,vmin=bin_edges[0], vmax=bin_edges[-1])
     ax.set_axis_off()
     ax.add_artist(scalebar)
-    colors = plt.cm.RdPu(np.linspace(0, 1, len(XY)+1))
-    for i in range(len(XY)):
-        ax.plot(XY[i][0], XY[i][1], 'o', mfc='none', mec=colors[i+1],mew=3, markersize=15)
+    colors = plt.cm.RdPu(np.linspace(0, 1, len(YX)+1))
+    for i in range(len(YX)):
+        ax.plot(YX[i][1], YX[i][0], 'o', mfc='none', mec=colors[i+1],mew=3, markersize=15)
     cbar=fig.colorbar(cmap, ax=ax, format='%.1f')
     if data_type == 'PLCOM':
         cbarlabel = 'PL centre of mass energy (nm)'
@@ -501,11 +501,11 @@ def point_marker(map_data,original_data, XY,data_type):
 
 
 #%% Extract the spectrum at the points of interest and plot them on the same figure
-def Spectrum_extracted(original_data, XY, data_type,processed_data=None,x_lim=None,y_lim=None):
+def Spectrum_extracted(original_data, YX, data_type,processed_data=None,x_lim=None,y_lim=None):
     """
     Plot the spectrum at the points of interest on the same figure
     :param original_data (LumiSpectrum): hyperspectral data read by Hyperspy used to provide the spectral axis information
-    :param XY (list): the list of the coordinates of the points of interest
+    :param YX (list): the list of the coordinates of the points of interest (Y,X)
     :param data_type (str): the type of the data, either 'PL' or 'Raman'
     :param processed_data (np.ndarray)(optional): the registered (and reconstructed) data after data preprocessing
     :param x_lim (list)(optional): the x limit of the plot
@@ -513,11 +513,11 @@ def Spectrum_extracted(original_data, XY, data_type,processed_data=None,x_lim=No
     :return: fig (matplotlib.figure.Figure): the figure object,
                 ax (matplotlib.axes._axes.Axes): the axes object
     """
-    colors = plt.cm.RdPu(np.linspace(0, 1, len(XY)+1)) # set the color map, here we use the RdPu colormap
+    colors = plt.cm.RdPu(np.linspace(0, 1, len(YX)+1)) # set the color map, here we use the RdPu colormap
     fig, ax = plt.subplots()
-    for i in range(len(XY)):
-        x = XY[i][0]
-        y = XY[i][1]
+    for i in range(len(YX)):
+        x = YX[i][1]
+        y = YX[i][0]
         Spectr = original_data.axes_manager[2].axis
         if processed_data is not None:
             intensity = processed_data[y, x, :]
