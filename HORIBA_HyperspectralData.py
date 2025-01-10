@@ -445,6 +445,20 @@ def plot_com_map(original_data, processed_data=None, lambda1=None, lambda2=None,
 
     return com_map
 
+#%% Extract the coordinates of the special values such as the maximum, minimum, and the median
+def coord_extract(map_data, value='max'):
+    '''
+    Extract the coordinates of the maxima, minima or median in the map
+    :param map_data (np.ndarray): the 2D map data
+    :param value: 'max' by default, which refers to maximum, 'min' for minima, 'median' for median;
+    :return: coord (tuple): (Y, X) the coordinate of the point with the specified value
+    '''
+    coord = np.unravel_index(np.argmax(map_data, axis=None), map_data.shape)
+    if value == 'min':
+        coord = np.unravel_index(np.argmin(map_data, axis=None), map_data.shape)
+    elif value == 'median':
+        coord = np.unravel_index(np.argsort(map_data, axis=None)[map_data.size // 2], map_data.shape)
+    return coord
 
 #%% Mark points of interest on the map
 def point_marker(map_data,original_data, YX,data_type):
