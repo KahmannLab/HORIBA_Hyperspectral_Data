@@ -143,7 +143,7 @@ def create_mask(map2d, value_threshold, min_size, area_threshold):
     return mask
 
 #%% Image registration using ANTs with optional parameters
-def ants_registration(fixed_img, moving_img,type_of_transform,random_seed=None,interpolator='nearestNeighbor'):
+def ants_registration(fixed_img, moving_img,type_of_transform,random_seed=None,interpolator='nearestNeighbor',outprefix=None):
     """
     Image registration using ANTs
     :param fixed_img (np.ndarray): the fixed image
@@ -157,7 +157,7 @@ def ants_registration(fixed_img, moving_img,type_of_transform,random_seed=None,i
     fixed = ants.from_numpy(fixed_img)
     moving = ants.from_numpy(moving_img)
 
-    transform = ants.registration(fixed=fixed, moving=moving, type_of_transform=type_of_transform,random_seed=random_seed)
+    transform = ants.registration(fixed=fixed, moving=moving, type_of_transform=type_of_transform,random_seed=random_seed,outprefix=outprefix)
     warped_moving = ants.apply_transforms(fixed=fixed, moving=moving, transformlist=transform['fwdtransforms'], interpolator=interpolator).numpy()
     #check the results of the registration
     fig, ax = plt.subplots()
@@ -294,6 +294,69 @@ def triple_gaussian(x, amp1, cen1, wid1, amp2, cen2, wid2, amp3, cen3, wid3):
 # Function to integrate a Gaussian function
 def gaussian_integral(amplitude, width):
     return amplitude * np.sqrt(2 * np.pi) * width
+#%% tripple gaussian fitting to extract parameters and errors
+def gaussian_fit(data, func_name='triple_gaussian',initial_guesses=None,bounds=(-np.inf,np.inf)):
+    """
+    Fit the PL spectrum of a single pixel with the triple Gaussian peaks
+    :param data (LumiSpectrum): the original (or reconstructed) hyperspectral data read by hyperspy
+    :param processed_data (np.ndarray): the warped hyperspectral data
+    :param initial_guesses (list): the initial guesses for the Gaussian parameters
+    :return: params (np.ndarray): the Gaussian parameters,
+                errors (np.ndarray): the errors of the Gaussian parameters
+    """
+    if func_name == 'triple_gaussian':
+        func = triple_gaussian
+    fit_params = np.zeros((data.data.shape[0], data.data.shape[1], 9))
+    fit_errors = np.zeros((data.data.shape[0], data.data.shape[1], 9))
+    wavelengths = data.axes_manager[2].axis
+    for i in range(data.data.shape[0]):
+        for j in range(data.data.shape[1]):
+            Spectra = data.data[i, j, :]
+            try:
+                # Fit the spectrum with the triple Gaussian function
+                popt, cov = curve_fit(func, wavelengths, Spectra, p0=initial_guesses,bounds=bounds)
+                errors = np.sqrt(np.diag(cov))
+                fit_params[i, j, :] = popt
+                fit_errors[i, j, :] = errors
+            except RuntimeError:
+                # If the fit fails, set the Gaussian parameters and errors to zero
+                print('The fit failed at pixel [{}, {}]'.format(i, j))
+                fit_params[i, j, :] = 0
+                fit_errors[i, j, :] = 0
+    return fit_params, fit_errors
+#%% Plot spectra with the Gaussian fitting and the residuals at the given pixel
+def plot_gaussian_fit(data, params, func_name='triple_gaussian', px_yx=(0,0),save_path=None):
+    """
+    Plot the spectrum with the triple Gaussian fitting and the residuals at the given pixel
+    :param original_data (LumiSpectrum): the original hyperspectral data
+    :param params (np.ndarray): the Gaussian parameters
+    :param px_xy (tuple): the coordinates of the pixel in the format (y, x)
+    :param save_path (str)(optional): the path to save the figure
+    :return: None
+    """
+    if func_name == 'triple_gaussian':
+        func = triple_gaussian
+    wavelengths = data.axes_manager[2].axis
+    spectrum = data.data[px_yx[0], px_yx[1], :]
+    params_pixel = params[px_yx[0], px_yx[1], :]
+    fit = func(wavelengths, *params_pixel)
+    residuals = spectrum - fit
+    fig, ax = plt.subplots(1,2,figsize=(13,5))
+    ax[0].scatter(wavelengths, spectrum, label='Data')
+    ax[0].plot(wavelengths, fit, label='Fit', color='r')
+    ax[1].scatter(wavelengths, residuals, label='Residuals')
+    ax[0].set_xlabel('Wavelength (nm)',fontsize=12,labelpad=10)
+    ax[0].set_ylabel('PL intensity (counts)',fontsize=12,labelpad=10)
+    ax[1].set_xlabel('Wavelength (nm)',fontsize=12,labelpad=10)
+    ax[1].set_ylabel('Data - Fit',fontsize=12,labelpad=10)
+    ax[0].tick_params(which='both', direction='in', right=True, top=True)
+    ax[1].tick_params(which='both', direction='in', right=True, top=True)
+    ax[0].legend()
+    plt.tight_layout()
+    if save_path is not None:
+        plt.savefig(save_path,transparent=True,dpi=300)
+    plt.show()
+    return None
 #%% Functions used to get the integrated intensity of the Gaussian peaks over the entire spectral range
 # Step1: Fit each pixel with multiple Gaussian peaks to extract the integrated intensity of the individual peaks
 from scipy.optimize import curve_fit
@@ -489,9 +552,9 @@ def point_marker(map_data,original_data, YX,data_type):
     cmap=ax.imshow(map_data,vmin=bin_edges[0], vmax=bin_edges[-1])
     ax.set_axis_off()
     ax.add_artist(scalebar)
-    colors = plt.cm.RdPu(np.linspace(0, 1, len(YX)+1))
+    colors = ['m', 'k', 'b', 'r', 'c', 'g']
     for i in range(len(YX)):
-        ax.plot(YX[i][1], YX[i][0], 'o', mfc='none', mec=colors[i+1],mew=3, markersize=15)
+        ax.plot(YX[i][1], YX[i][0], 'o', mfc='none', mec=colors[i],mew=3, markersize=15)
     cbar=fig.colorbar(cmap, ax=ax, format='%.1f')
     if data_type == 'PLCOM':
         cbarlabel = 'PL centre of mass energy (nm)'
@@ -527,7 +590,7 @@ def Spectrum_extracted(original_data, YX, data_type,processed_data=None,x_lim=No
     :return: fig (matplotlib.figure.Figure): the figure object,
                 ax (matplotlib.axes._axes.Axes): the axes object
     """
-    colors = plt.cm.RdPu(np.linspace(0, 1, len(YX)+1)) # set the color map, here we use the RdPu colormap
+    colors = ['m', 'k', 'b', 'r', 'c', 'g'] # set the color map, here we use the RdPu colormap
     fig, ax = plt.subplots()
     for i in range(len(YX)):
         x = YX[i][1]
@@ -537,17 +600,17 @@ def Spectrum_extracted(original_data, YX, data_type,processed_data=None,x_lim=No
             intensity = processed_data[y, x, :]
         else:
             intensity = original_data.data[y, x, :]
-        ax.plot(Spectr, intensity, color=colors[i+1])
+        ax.plot(Spectr, intensity, color=colors[i])
     if data_type == 'PL':
-        ax.set_xlabel('Wavelength (nm)', fontsize=12)
+        ax.set_xlabel('Wavelength (nm)', fontsize=12, labelpad=10)
         secx = ax.secondary_xaxis('top', functions=(lambda Spectr: 1239.8 / Spectr, lambda Spectr: 1239.8 / Spectr))
-        secx.set_xlabel('Energy (eV)', fontsize=12)
+        secx.set_xlabel('Energy (eV)', fontsize=12, labelpad=10)
         secx.tick_params(which='both', direction='in', right=True, top=True)
         plt.gca().xaxis.set_major_locator(MultipleLocator(50))
         plt.gca().xaxis.set_minor_locator(AutoMinorLocator(2))
         plt.tick_params(which='both', direction='in', right=True, top=False)
     elif data_type == 'Raman':
-        ax.set_xlabel('Raman shift (cm$^{-1}$)', fontsize=12)
+        ax.set_xlabel('Raman shift (cm$^{-1}$)', fontsize=12, labelpad=10)
         ax.tick_params(which='both', direction='in', right=True, top=True)
         plt.gca().xaxis.set_major_locator(MultipleLocator(200))
         plt.gca().xaxis.set_minor_locator(AutoMinorLocator(2))
@@ -557,7 +620,7 @@ def Spectrum_extracted(original_data, YX, data_type,processed_data=None,x_lim=No
         plt.gca().xaxis.set_major_locator(MultipleLocator(x_lim[1]/10))
     if y_lim is not None:
         ax.set_ylim(y_lim)
-    ax.set_ylabel('{} intensity (counts)'.format(data_type), fontsize=12)
+    ax.set_ylabel('{} intensity (counts)'.format(data_type), fontsize=12, labelpad=10)
     plt.tight_layout()
     return fig, ax
 
