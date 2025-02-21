@@ -271,6 +271,39 @@ def PC_spc(data,component_index, data_type):
     plt.tight_layout()
     return Intens
 
+#%% Plot the loading map of the given PC
+def loading_map(dataPCA, component_index,save_path=None):
+    '''
+    Plot the loading map of the given PC
+    :param dataPCA: the data after PCA decomposition
+    :param component_index: the index of the principal component starting from 1
+    :return:
+    '''
+    loading_maps = dataPCA.get_decomposition_loadings()
+    loading_map = loading_maps.data[component_index-1,:,:]
+    hist, bins = np.histogram(loading_map.flatten(), bins=500)
+    cum_counts = np.cumsum(hist)
+    tot_counts = np.sum(hist)
+    tot_counts_5 = tot_counts * 0.05
+    tot_counts_95 = tot_counts * 0.95
+    bin_edges = bins[np.where((cum_counts >= tot_counts_5) & (cum_counts <= tot_counts_95))]
+
+    scalebar = ScaleBar(dataPCA.axes_manager[0].scale, "um", length_fraction=0.13, location='lower right',
+                        box_color=None, color='white', frameon=False, width_fraction=0.02, font_properties={'size': 12,
+                                                                                                        'weight': 'bold',
+                                                                                                        'math_fontfamily': 'dejavusans'})
+    fig, ax = plt.subplots()
+    cmap = ax.imshow(loading_map, vmin=bin_edges[0], vmax=bin_edges[-1])
+    ax.set_axis_off()
+    ax.add_artist(scalebar)
+    ax.set_title('Loading map of the {}. PC'.format(component_index))
+    cbar = fig.colorbar(cmap, ax=ax)
+    cbar.set_label('Loading value')
+    plt.tight_layout()
+    if save_path is not None:
+        plt.savefig(save_path,transparent=True,dpi=300)
+    plt.show()
+
 #%% Reconstruct the data using given number of PCs or a certain PC
 def rec_data(data, num_PCs, single_PC=None):
     """
@@ -286,6 +319,8 @@ def rec_data(data, num_PCs, single_PC=None):
         rec_data = data.get_decomposition_model(components=num_PCs)
     return rec_data
 #%% Define gaussian fitting function for the triple Gaussian
+def gaussian(x, amp, cen, wid):
+    return amp * np.exp(-(x - cen)**2 / (2 * wid**2))
 def triple_gaussian(x, amp1, cen1, wid1, amp2, cen2, wid2, amp3, cen3, wid3):
     return (amp1 * np.exp(-(x - cen1)**2 / (2 * wid1**2)) +
             amp2 * np.exp(-(x - cen2)**2 / (2 * wid2**2)) +
@@ -334,16 +369,24 @@ def plot_gaussian_fit(data, params, func_name='triple_gaussian', px_yx=(0,0),sav
     :param save_path (str)(optional): the path to save the figure
     :return: None
     """
-    if func_name == 'triple_gaussian':
-        func = triple_gaussian
+    fig, ax = plt.subplots(1, 2, figsize=(13, 5))
     wavelengths = data.axes_manager[2].axis
     spectrum = data.data[px_yx[0], px_yx[1], :]
     params_pixel = params[px_yx[0], px_yx[1], :]
+    ax[0].scatter(wavelengths, spectrum, label='Data')
+    if func_name == 'triple_gaussian':
+        func = triple_gaussian
+        fit1 = gaussian(wavelengths, *params_pixel[:3])
+        fit2 = gaussian(wavelengths, *params_pixel[3:6])
+        fit3 = gaussian(wavelengths, *params_pixel[6:])
+        ax[0].plot(wavelengths, fit1, label='Gaussian 1',color='y')
+        ax[0].plot(wavelengths, fit2, label='Gaussian 2',color='g')
+        ax[0].plot(wavelengths, fit3, label='Gaussian 3',color='c')
+    elif func_name == 'gaussian':
+        func = gaussian
     fit = func(wavelengths, *params_pixel)
     residuals = spectrum - fit
-    fig, ax = plt.subplots(1,2,figsize=(13,5))
-    ax[0].scatter(wavelengths, spectrum, label='Data')
-    ax[0].plot(wavelengths, fit, label='Fit', color='r')
+    ax[0].plot(wavelengths, fit, label='Fit',color='r')
     ax[1].scatter(wavelengths, residuals, label='Residuals')
     ax[0].set_xlabel('Wavelength (nm)',fontsize=12,labelpad=10)
     ax[0].set_ylabel('PL intensity (counts)',fontsize=12,labelpad=10)
@@ -410,14 +453,19 @@ def intint_gaussian(original_data,initial_guesses, processed_data=None, sum_int_
 
 
 #%% Step2: Plot the integrated intensity map of the individual Gaussian peak over the entire spectral range
-def plot_intint_gaussian(original_data, intint_gaussian,params_ROI=None):
+def plot_intint_gaussian(original_data,params,ROI=None,save_path=None):
     """
     Plot the integrated intensity maps of the individual Gaussian peaks over the entire spectral range
     :param original_data (LumiSpectrum): the original hyperspectral data used to provide the scale information
-    :param intint_gaussian (np.ndarray): the integrated intensity map of the individual Gaussian peak
-    :param params_ROI (tuple)(optional): the region of interest (ROI) in the format (x, y, width, height)
+    :param params (np.ndarray): the Gaussian parameters gotten from the fitting
+    :param ROI (tuple)(optional): the region of interest (ROI) in the format (x, y, width, height)
     :return: None
     """
+    # integrate a single Gaussian peak
+    intint_gaussian = np.zeros((original_data.data.shape[0], original_data.data.shape[1]))
+    for i in range(original_data.data.shape[0]):
+        for j in range(original_data.data.shape[1]):
+            intint_gaussian[i, j] = gaussian_integral(params[i, j, 0], params[i, j, 2])
     # use histogram to avoid the bad pixel in order to get a better ratio map
     hist, bins = np.histogram(intint_gaussian.flatten(), bins=500)
     cum_counts = np.cumsum(hist)
@@ -426,8 +474,8 @@ def plot_intint_gaussian(original_data, intint_gaussian,params_ROI=None):
     tot_counts_95 = tot_counts * 0.95
     bin_edges = bins[np.where((cum_counts >= tot_counts_5) & (cum_counts <= tot_counts_95))]
     fig, ax = plt.subplots()
-    if params_ROI is not None:
-        intint_gaussian_ROI = intint_gaussian[params_ROI[1]:params_ROI[1]+params_ROI[3],params_ROI[0]:params_ROI[0]+params_ROI[2]]
+    if ROI is not None:
+        intint_gaussian_ROI = intint_gaussian[ROI[1]:ROI[1]+ROI[3],ROI[0]:ROI[0]+ROI[2]]
         cmap = ax.imshow(intint_gaussian_ROI, vmin=bin_edges[0], vmax=bin_edges[-1])
     else:
         cmap = ax.imshow(intint_gaussian, vmin=bin_edges[0], vmax=bin_edges[-1])
@@ -440,6 +488,10 @@ def plot_intint_gaussian(original_data, intint_gaussian,params_ROI=None):
     cbar = fig.colorbar(cmap, ax=ax)
     cbar.set_label('PL integrated intensity (counts)')
     plt.tight_layout()
+    if save_path is not None:
+        plt.savefig(save_path,transparent=True,dpi=300)
+    plt.show()
+
 #%% Plot the centre of mass map
 # Calculate and plot the COM of the PL spectrum for all pixels using vectorized operations
 def plot_com_map(original_data, processed_data=None, lambda1=None, lambda2=None, params_ROI=None,data_type=None):
