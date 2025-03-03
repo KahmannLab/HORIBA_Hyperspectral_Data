@@ -6,6 +6,7 @@ from matplotlib_scalebar.scalebar import ScaleBar
 import matplotlib.ticker
 from matplotlib.ticker import MultipleLocator, AutoMinorLocator
 
+
 #%% Load the hyperspectral data in an .xml file exported(or saved) from LabSpec(HORIBA) software
 def load_xml(file_path):
     '''
@@ -236,12 +237,13 @@ def plot_evr(data, n_components):
     plt.tight_layout()
 
 #%% Plot the PC spectra
-def PC_spc(data,component_index, data_type):
+def PC_spc(data,component_index, data_type,save_path=None):
     """
     Plot the spectrum of the individual principal component
     :param data (LumiSpectrum): hyperspectral data
     :param component_index (int): the index of the principal component starting from 0 (Note the index given by Hyperspy is starting from 0, not 1)
-    :return:
+    :param data_type (str): the type of the data, either 'PL' or 'Raman'
+    :param save_path (str)(optional): the path to save the figure
     """
     PCs = data.get_decomposition_factors()
     Spectr = PCs.axes_manager[1].axis
@@ -269,7 +271,9 @@ def PC_spc(data,component_index, data_type):
     ax.set_ylabel(ylabel, fontsize=12, labelpad=10)
     ax.set_title('{} spectrum based on the {}. PC'.format(data_type,component_index+1)) # the index shown in the title is starting from 1
     plt.tight_layout()
-    return Intens
+    if save_path is not None:
+        plt.savefig(save_path,transparent=True,dpi=300)
+    plt.show()
 
 #%% Plot the loading map of the given PC
 def loading_map(dataPCA, component_index,save_path=None):
@@ -403,13 +407,13 @@ def plot_gaussian_fit(data, params, func_name='triple_gaussian', px_yx=(0,0),sav
 #%% Functions used to get the integrated intensity of the Gaussian peaks over the entire spectral range
 # Step1: Fit each pixel with multiple Gaussian peaks to extract the integrated intensity of the individual peaks
 from scipy.optimize import curve_fit
-def intint_gaussian(original_data,initial_guesses, processed_data=None, sum_int_threshold=0):
+def intint_gaussian(original_data, initial_guesses=None, sum_int_threshold=0,bounds=(-np.inf,np.inf)):
     """
     Fit the PL spectrum of a single pixel with the triple Gaussian peaks and extract the integrated intensity of the individual peaks
-    :param original_data (np.ndarray): the original hyperspectral data, if processed_data is given, the original data is just used to provide the scale information
+    :param original_data (LumiSpectrum): the original hyperspectral data read by hyperspy
     :param initial_guesses (list): the initial guesses for the Gaussian parameters
-    :param processed_data (np.ndarray)(optional): the registered data
-    :param num_peaks (int): the number of Gaussian peaks
+    :param sum_int_threshold (int): the threshold for the sum of the intensity of the spectrum
+    :param bounds (tuple): the bounds for the Gaussian parameters
     :return: intint_gaussian1 (np.ndarray): the integrated intensity map of the 1st Gaussian peak,
                 intint_gaussian2 (np.ndarray): the integrated intensity map of the 2nd Gaussian peak,
                 intint_gaussian3 (np.ndarray): the integrated intensity map of the 3rd Gaussian peak
@@ -424,10 +428,7 @@ def intint_gaussian(original_data,initial_guesses, processed_data=None, sum_int_
     # Loop through each pixel in the spatial dimensions
     for i in range(map_shape[0]):
         for j in range(map_shape[1]):
-            if processed_data is not None:
-                spectrum = processed_data.data[i, j, :]# extract the spectrum of the current pixel
-            else:
-                spectrum = original_data.data[i, j, :]# extract the spectrum of the current pixel
+            spectrum = original_data.data[i, j, :]
             # mask the fiducial marker area, the intensity sum of the pixel is below threshold (according to the rough PL integrated intensity map)
             if spectrum.sum() < sum_int_threshold:
                 intint_gaussian1[i, j] = 0
@@ -436,7 +437,7 @@ def intint_gaussian(original_data,initial_guesses, processed_data=None, sum_int_
                 continue
             try:
                 # Fit the spectrum with the triple Gaussian function
-                params, _ = curve_fit(triple_gaussian, wavelengths, spectrum, p0=initial_guesses)
+                params, _ = curve_fit(triple_gaussian, wavelengths, spectrum, p0=initial_guesses,bounds=bounds)
 
                 # Extract Gaussian parameters and calculate the integrated intensities
                 amp1, cen1, wid1, amp2, cen2, wid2, amp3, cen3, wid3 = params
@@ -445,27 +446,25 @@ def intint_gaussian(original_data,initial_guesses, processed_data=None, sum_int_
                 intint_gaussian3[i, j] = gaussian_integral(amp3, wid3)
             except RuntimeError:
                 # If the fit fails, set the integrated intensities to zero
+                print('The fit failed at pixel ({}, {})'.format(i, j))
                 intint_gaussian1[i, j] = 0
                 intint_gaussian2[i, j] = 0
                 intint_gaussian3[i, j] = 0
 
     return intint_gaussian1, intint_gaussian2, intint_gaussian3
 
-
 #%% Step2: Plot the integrated intensity map of the individual Gaussian peak over the entire spectral range
-def plot_intint_gaussian(original_data,params,ROI=None,save_path=None):
+def plot_intint_gaussian(original_data,intint_gaussian,cbar_label='PL integrated intensity (counts)',ROI=None,save_path=None):
     """
     Plot the integrated intensity maps of the individual Gaussian peaks over the entire spectral range
     :param original_data (LumiSpectrum): the original hyperspectral data used to provide the scale information
-    :param params (np.ndarray): the Gaussian parameters gotten from the fitting
+    :param intint_gaussian (np.ndarray): the integrated intensity map of the individual Gaussian peaks
+    :param cbar_label (str): the label of the colorbar
     :param ROI (tuple)(optional): the region of interest (ROI) in the format (x, y, width, height)
+    :param save_path (str)(optional): the path to save the figure
     :return: None
     """
     # integrate a single Gaussian peak
-    intint_gaussian = np.zeros((original_data.data.shape[0], original_data.data.shape[1]))
-    for i in range(original_data.data.shape[0]):
-        for j in range(original_data.data.shape[1]):
-            intint_gaussian[i, j] = gaussian_integral(params[i, j, 0], params[i, j, 2])
     # use histogram to avoid the bad pixel in order to get a better ratio map
     hist, bins = np.histogram(intint_gaussian.flatten(), bins=500)
     cum_counts = np.cumsum(hist)
@@ -486,7 +485,7 @@ def plot_intint_gaussian(original_data,params,ROI=None,save_path=None):
                                                                                                         'math_fontfamily': 'dejavusans'})
     ax.add_artist(scalebar)
     cbar = fig.colorbar(cmap, ax=ax)
-    cbar.set_label('PL integrated intensity (counts)')
+    cbar.set_label(cbar_label)
     plt.tight_layout()
     if save_path is not None:
         plt.savefig(save_path,transparent=True,dpi=300)
@@ -494,7 +493,7 @@ def plot_intint_gaussian(original_data,params,ROI=None,save_path=None):
 
 #%% Plot the centre of mass map
 # Calculate and plot the COM of the PL spectrum for all pixels using vectorized operations
-def plot_com_map(original_data, processed_data=None, lambda1=None, lambda2=None, params_ROI=None,data_type=None):
+def plot_com_map(original_data, processed_data=None, lambda1=None, lambda2=None, params_ROI=None,data_type='PL',save_path=None):
     """
     Plot the centre of mass (COM) map of the PL spectrum for all pixels
     :param original_data (LumiSpectrum): the original/reconstructed hyperspectral data
@@ -503,6 +502,7 @@ def plot_com_map(original_data, processed_data=None, lambda1=None, lambda2=None,
     :param lambda2 (float)(optional): the upper limit of the wavelength range for the COM calculation
     :param params_ROI (tuple)(optional): the region of interest (ROI) in the format (x, y, width, height)
     :param data_type (str): the type of the data, either 'PL' or 'Raman'
+    :param save_path (str)(optional): the path to save the figure
     :return: com_map (np.ndarray): the COM map
     """
     index1 = 0
@@ -557,7 +557,9 @@ def plot_com_map(original_data, processed_data=None, lambda1=None, lambda2=None,
     cbar = fig.colorbar(cmap, ax=ax, format='%.1f')
     cbar.set_label(cbarlabel)
     plt.tight_layout()
-
+    if save_path is not None:
+        plt.savefig(save_path,transparent=True,dpi=300)
+    plt.show()
     return com_map
 
 #%% Extract the coordinates of the special values such as the maximum, minimum, and the median
@@ -576,16 +578,14 @@ def coord_extract(map_data, value='max'):
     return coord
 
 #%% Mark points of interest on the map
-def point_marker(map_data,original_data, YX,data_type):
+def point_marker(map_data,original_data, YX,cbarlabel='Intensity (counts)',save_path=None):
     """
     Mark the points of interest on the map
     :param map_data (np.ndarray): the dataset of map
     :param original_data (LumiSpectrum): the original data read by hyperspy used to provide the scale information
     :param YX (list): the list of the coordinates of the points of interest (Y,X)
-    :param data_type (str): the type of the map data, it could be 'PLCOM', 'RamanCOM', 'PLIntint', 'RamanIntint', 'PLInt', and 'RamanInt',
-    'PLRatio', 'RamanRatio'
-    :return: fig (matplotlib.figure.Figure): the new figure object with markers,
-            ax (matplotlib.axes._axes.Axes): the new axes object with markers
+    :param cbarlabel (str): the label of the colorbar
+    :param save_path (str)(optional): the path to save the figure
     """
     # use histogram to avoid the bad pixel in order to get a better ratio map
     hist, bins = np.histogram(map_data.flatten(), bins=500)
@@ -608,29 +608,15 @@ def point_marker(map_data,original_data, YX,data_type):
     for i in range(len(YX)):
         ax.plot(YX[i][1], YX[i][0], 'o', mfc='none', mec=colors[i],mew=3, markersize=15)
     cbar=fig.colorbar(cmap, ax=ax, format='%.1f')
-    if data_type == 'PLCOM':
-        cbarlabel = 'PL centre of mass energy (nm)'
-    elif data_type == 'RamanCOM':
-        cbarlabel = 'Raman centre of mass energy (cm$^{-1}$)'
-    elif data_type == 'PLIntint':
-        cbarlabel = 'PL integrated intensity (counts)'
-    elif data_type == 'RamanIntint':
-        cbarlabel = 'Raman integrated intensity (counts)'
-    elif data_type == "PLInt":
-        cbarlabel = 'PL intensity (counts)'
-    elif data_type == "RamanInt":
-        cbarlabel = 'Raman intensity (counts)'
-    elif data_type == "PLRatio":
-        cbarlabel = 'Normalized PL intensity'
-    elif data_type == "RamanRatio":
-        cbarlabel = 'Normalized Raman intensity'
     cbar.set_label(cbarlabel, fontsize=12, labelpad=10)
     plt.tight_layout()
-    return fig, ax
+    if save_path is not None:
+        plt.savefig(save_path,transparent=True,dpi=300)
+    plt.show()
 
 
 #%% Extract the spectrum at the points of interest and plot them on the same figure
-def Spectrum_extracted(original_data, YX, data_type,processed_data=None,x_lim=None,y_lim=None):
+def Spectrum_extracted(original_data, YX, data_type,processed_data=None,x_lim=None,y_lim=None,spc_labels=None,save_path=None):
     """
     Plot the spectrum at the points of interest on the same figure
     :param original_data (LumiSpectrum): hyperspectral data read by Hyperspy used to provide the spectral axis information
@@ -642,6 +628,11 @@ def Spectrum_extracted(original_data, YX, data_type,processed_data=None,x_lim=No
     :return: fig (matplotlib.figure.Figure): the figure object,
                 ax (matplotlib.axes._axes.Axes): the axes object
     """
+    if spc_labels is None:
+        # create a list of None with the same length as YX
+        spc_labels = [None] * len(YX)
+    else:
+        spc_labels = spc_labels
     colors = ['m', 'k', 'b', 'r', 'c', 'g'] # set the color map, here we use the RdPu colormap
     fig, ax = plt.subplots()
     for i in range(len(YX)):
@@ -652,7 +643,7 @@ def Spectrum_extracted(original_data, YX, data_type,processed_data=None,x_lim=No
             intensity = processed_data[y, x, :]
         else:
             intensity = original_data.data[y, x, :]
-        ax.plot(Spectr, intensity, color=colors[i])
+        ax.plot(Spectr, intensity, color=colors[i], label=spc_labels[i])
     if data_type == 'PL':
         ax.set_xlabel('Wavelength (nm)', fontsize=12, labelpad=10)
         secx = ax.secondary_xaxis('top', functions=(lambda Spectr: 1239.8 / Spectr, lambda Spectr: 1239.8 / Spectr))
@@ -673,21 +664,23 @@ def Spectrum_extracted(original_data, YX, data_type,processed_data=None,x_lim=No
     if y_lim is not None:
         ax.set_ylim(y_lim)
     ax.set_ylabel('{} intensity (counts)'.format(data_type), fontsize=12, labelpad=10)
+    ax.legend()
     plt.tight_layout()
-    return fig, ax
+    if save_path is not None:
+        plt.savefig(save_path,transparent=True,dpi=300)
+    plt.show()
 
 
 #%% Plot an average spectrum
-def avg_spectrum(data, data_type,params_ROI=None):
+def avg_spectrum(data, data_type,params_ROI=None,save_path=None):
     """
     Plot the average spectrum over the whole map
     :param data (LumiSpectrum): hyperspectral data
     :param data_type (str): the type of the data, either 'PL' or 'Raman'
     :param params_ROI (tuple)(optional): the region of interest (ROI) in the format (x, y, width, height)
+    :param save_path (str)(optional): the path to save the figure
     :return:
-        avg_intens (np.ndarray): the average intensity spectrum,
-        fig (matplotlib.figure.Figure): the figure object,
-        ax (matplotlib.axes._axes.Axes): the axes object
+        avg_intens (np.ndarray): the average intensity spectrum
     """
     Spectr = data.axes_manager[2].axis
     if params_ROI is not None:
@@ -718,10 +711,13 @@ def avg_spectrum(data, data_type,params_ROI=None):
     ax.set_ylabel('{} intensity (counts)'.format(data_type), fontsize=12, labelpad=10)
     ax.tick_params(which='both', direction='in', right=True, top=False)
     plt.tight_layout()
-    return avg_intens, fig, ax
+    if save_path is not None:
+        plt.savefig(save_path,transparent=True,dpi=300)
+    plt.show()
+    return avg_intens
 
 #%% Compare the spectra on the same figure, for example, the average spectrum before & after illumination
-def spectra_compare(data1, data2, data_type,original_data1, original_data2=None,lambda_range=None):
+def spectra_compare(data1, data2, data_type,original_data1, original_data2=None,lambda_range=None,save_path=None):
     """
     Plot two spectra on the same figure
     :param data1 (np.ndarray): spectrum 1
@@ -731,6 +727,7 @@ def spectra_compare(data1, data2, data_type,original_data1, original_data2=None,
     :param original_data2 (LumiSpectrum)(optional): the original data read by Hyperspy providing spectral info for data2,
             if none, the spectral axis of data2 is the same as that of data1
     :param lambda_range (tuple)(optional): the range of the wavelength/wavenumber for the plot
+    :param save_path (str)(optional): the path to save the figure
     :return:
     """
     fig, ax = plt.subplots()
@@ -776,19 +773,24 @@ def spectra_compare(data1, data2, data_type,original_data1, original_data2=None,
     ax.tick_params(which='both', direction='in', right=True, top=True)
     plt.legend()
     plt.tight_layout()
+    if save_path is not None:
+        plt.savefig(save_path,transparent=True,dpi=300)
+    plt.show()
 #%% Find local maxima in the spectrum based on scipy.signal.find_peaks
 import scipy.signal as signal
 
-def find_maxima(original_data, spectrum_data, data_type, prominence,height):
+def find_maxima(original_data, spectrum_data, data_type, prominence=None,height=None,save_path=None):
     """
     Find the maxima in the average spectrum
     :param original_data (LumiSpectrum): the original data read by Hyperspy providing spectral information
     :param spectrum_data (np.ndarray): the spectrum
     :param data_type (str): the type of the data, either 'PL' or 'Raman'
     :param prominence (int or float): the prominence of the peaks
+    :param height (int or float): the height of the peaks
+    :param save_path (str)(optional): the path to save the figure
     :return: peaks (np.ndarray): the indices of the maxima in the spectrum
     """
-    peaks, _ = signal.find_peaks(spectrum_data, prominence=(prominence,None),height=(height,None))
+    peaks, _ = signal.find_peaks(spectrum_data, prominence=prominence,height=height)
     pps = np.array(original_data.axes_manager[2].axis[peaks])  # peak positions
     pint = np.array(spectrum_data[peaks])  # peak intensity
     plt.plot(original_data.axes_manager[2].axis, spectrum_data)
@@ -815,4 +817,60 @@ def find_maxima(original_data, spectrum_data, data_type, prominence,height):
     plt.ylabel('{} intensity (counts)'.format(data_type), fontsize=12, labelpad=10)
     plt.tick_params(which='both', direction='in', right=True, top=True)
     plt.tight_layout()
+    if save_path is not None:
+        plt.savefig(save_path,transparent=True,dpi=300)
+    plt.show()
     return peaks
+
+#%% Plot histogram(s) of the 2d map data
+import scipy.stats as stats
+def plot_hist(dataMap, labels=None, spread=True, bins=100, bins_range=None, x_label='Intensity (counts)', save_path=None):
+    """
+    Plot histogram(s) of the 2D map data
+    :param dataMap (np.ndarray or list): the 2D map data or a list of 2D map data
+    :param labels (str or list)(optional): the label(s) of the histogram(s)
+    :param spread (bool): if True, the histogram(s) will be spread out
+    :param bins (int): the number of bins
+    :param bins_range (tuple)(optional): the range of the bins
+    :param x_label (str): the label of the x-axis
+    :param save_path (str)(optional): the path to save the figure
+    """
+    # check if the dataMap is a list
+    colors = ['r', 'b', 'g', 'c', 'm', 'y', 'k']
+    fig, ax = plt.subplots()
+    if isinstance(dataMap,list):
+        for i in range(len(dataMap)):
+            mean, std = stats.norm.fit(dataMap[i].flatten())
+            if bins_range is not None:
+                Range = bins_range
+            else:
+                Range = (dataMap[i].flatten().min(), dataMap[i].flatten().max())
+            if spread:
+                ax.hist(dataMap[i].flatten(), bins=bins, range=Range, color=colors[i], alpha=0.5, label=labels[i]+': mean={:.1f}, std={:.1f}'.format(mean, std))
+                # plot the corresponding normal distribution
+                x = np.linspace(Range[0], Range[1], bins)
+                y = stats.norm.pdf(x, mean, std)
+                ax.plot(x, y, color=colors[i])
+            else:
+                ax.hist(dataMap[i].flatten(), bins=bins, range=Range, color=colors[i], alpha=0.5, label=labels[i])
+    else:
+        mean, std = stats.norm.fit(dataMap.flatten())
+        if bins_range is not None:
+            Range = bins_range
+        else:
+            Range = (dataMap.flatten().min(), dataMap.flatten().max())
+        if spread:
+            ax.hist(dataMap.flatten(), bins=bins, range=Range, color=colors[0], alpha=0.5, label=labels+': mean={:.1f}, std={:.1f}'.format(mean, std))
+            # plot the corresponding normal distribution
+            x = np.linspace(Range[0], Range[1], bins)
+            y = stats.norm.pdf(x, mean, std)
+            ax.plot(x, y, color=colors[0])
+        else:
+            ax.hist(dataMap.flatten(), bins=bins, range=Range, color=colors[0], alpha=0.5, label=labels)
+    ax.set_xlabel(x_label, fontsize=12, labelpad=10)
+    ax.set_ylabel('Frequency', fontsize=12, labelpad=10)
+    ax.legend()
+    plt.tight_layout()
+    if save_path is not None:
+        plt.savefig(save_path,transparent=True,dpi=300)
+    plt.show()
