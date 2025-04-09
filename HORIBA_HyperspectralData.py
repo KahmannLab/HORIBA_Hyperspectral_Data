@@ -5,8 +5,21 @@ import ants
 from matplotlib_scalebar.scalebar import ScaleBar
 import matplotlib.ticker
 from matplotlib.ticker import MultipleLocator, AutoMinorLocator
+import os
 
-
+#%% extract the xml file paths
+def xml_paths(folder_path, endswith='.xml'):
+    """
+    Extract the sif file paths from the folder
+    :param folder_path (str): the path to the folder
+    :return: sif_paths (list): the list of the sif file paths
+    """
+    xml_paths = []
+    for root, dirs, files in os.walk(folder_path):
+        for file in files:
+            if file.endswith(endswith):
+                xml_paths.append(os.path.join(root, file))
+    return xml_paths
 #%% Load the hyperspectral data in an .xml file exported(or saved) from LabSpec(HORIBA) software
 def load_xml(file_path):
     '''
@@ -26,16 +39,15 @@ def remove_negative(data):
     data.data[data.data < 0] = 0
     return data
 #%% Plot an integrated intensity map
-def intint_map(data, data_type, spectral_range=None, warped_data=None):
+def intint_map(data, data_type, spectral_range=None, processed_data=None,
+               savefig=False, figname=None, savefile=False, filename=None, savepath=None):
     """
     Plot an integrated intensity map over the given wavelength or wavenumber range
     :param data (LumiSpectrum): hyperspectral data
     :param spectral_range (tuple)(optional): the wavelength or wavenumber range, for example, (500, 700) in nm for PL
     :param data_type (str): the type of the data, either 'PL' or 'Raman'
     :param warped_data (np.ndarray)(optional): the registered data
-    :return: intint (np.ndarray): the integrated intensity map,
-                fig (matplotlib.figure.Figure): the figure object,
-                ax (matplotlib.axes._axes.Axes): the axes object
+    :return: intint (np.ndarray): the integrated intensity map
     """
     Spectr = data.axes_manager[2].axis
     if spectral_range is not None:
@@ -44,8 +56,8 @@ def intint_map(data, data_type, spectral_range=None, warped_data=None):
     else:
         index1 = 0
         index2 = data.data.shape[2]
-    if warped_data is not None:
-        intint = warped_data[:,:,index1:index2].sum(axis=2)
+    if processed_data is not None:
+        intint = processed_data[:,:,index1:index2].sum(axis=2)
     else:
         intint = data.data[:,:,index1:index2].sum(axis=2)
 
@@ -73,10 +85,23 @@ def intint_map(data, data_type, spectral_range=None, warped_data=None):
     cbar.set_label('{} integrated intensity (counts)'.format(data_type))
     ax.add_artist(scalebar)
     plt.tight_layout()
-    return intint, fig, ax
+    if savefig:
+        if figname is None:
+            print('Please provide a figure name')
+        else:
+            plt.savefig(savepath+figname+'.png', transparent=True, dpi=300)
+    plt.show()
+
+    if savefile:
+        if filename is None:
+            print('Please provide a file name')
+        else:
+            np.savetxt(savepath+filename+'.txt', intint)
+    return intint
 
 #%%plot an intensity map(relative intensity map) at the given wavelength or wavenumber
-def int_map(original_data, wavelength,data_type,processed_data=None):
+def int_map(original_data, wavelength,data_type,processed_data=None,
+            savefig=False, figname=None, savefile=False, filename=None, savepath=None):
     """
     Plot an intensity map at the given wavelength or wavenumber
     :param original_data (LumiSpectrum): original/only-reconstructed hyperspectral data,
@@ -122,7 +147,19 @@ def int_map(original_data, wavelength,data_type,processed_data=None):
     cbar=fig.colorbar(cmap, ax=ax)
     cbar.set_label(cbarlabel, fontsize=12, labelpad=10)
     plt.tight_layout()
-    return int_map, fig, ax
+    if savefig:
+        if figname is None:
+            print('Please provide a figure name')
+        else:
+            plt.savefig(savepath+figname+'.png', transparent=True, dpi=300)
+    plt.show()
+
+    if savefile:
+        if filename is None:
+            print('Please provide a file name')
+        else:
+            np.savetxt(savepath+filename+'.txt', int_map)
+    return int_map
 
 #%% Create a binary mask to Highlight the features
 from skimage import morphology
@@ -144,7 +181,8 @@ def create_mask(map2d, value_threshold, min_size, area_threshold):
     return mask
 
 #%% Image registration using ANTs with optional parameters
-def ants_registration(fixed_img, moving_img,type_of_transform,random_seed=None,interpolator='nearestNeighbor',outprefix=None):
+def ants_registration(fixed_img, moving_img,type_of_transform,random_seed=None,interpolator='nearestNeighbor',outprefix=None,
+                      savefig=False,figname=None,savepath=None):
     """
     Image registration using ANTs
     :param fixed_img (np.ndarray): the fixed image
@@ -169,6 +207,12 @@ def ants_registration(fixed_img, moving_img,type_of_transform,random_seed=None,i
         ax.text(0.5, 0.95, 'Random seed: {}'.format(random_seed), horizontalalignment='left',
                 verticalalignment='center', transform=ax.transAxes, fontsize=12, color='white')
     plt.tight_layout()
+    if savefig:
+        if figname is None:
+            print('Please provide a figure name')
+        else:
+            plt.savefig(savepath+figname+'.png', transparent=True, dpi=300)
+    plt.show()
     return transform, warped_moving
 
 #%% Checking the registration results
@@ -235,6 +279,7 @@ def plot_evr(data, n_components):
     plt.gca().xaxis.set_major_locator(MultipleLocator(10))
     plt.gca().xaxis.set_minor_locator(AutoMinorLocator(5))
     plt.tight_layout()
+    plt.show()
 
 #%% Plot the PC spectra
 def PC_spc(data,component_index, data_type,save_path=None):

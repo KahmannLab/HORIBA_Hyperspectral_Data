@@ -11,10 +11,10 @@ reload(hsda)
 import HORIBA_HyperspectralData as hsda
 #%% load the hyperspectral data in xml format
 # here we load the PL and Raman data before and after illumination, named as 1 and 2, respectively
-path_PL_1 = 'C:/Data_Microscope/241104 PEA2MAPb2I7_degradation/FormatCov/PLMap_n2_2_0_1 s_532 nm_600 gr_mm_x100_100 µm_300 µm_0_025 %_new_marker.xml'
-path_PL_2 = 'C:/Data_Microscope/241104 PEA2MAPb2I7_degradation/FormatCov/PLMap_n2_2_0_1 s_532 nm_600 gr_mm_x100_100 µm_300 µm_0_025 %_new_marker_after_illum.xml'
-path_Raman_1 = 'C:/Data_Microscope/241104 PEA2MAPb2I7_degradation/FormatCov/RamanMap_n2_2_0_1 s_785 nm_600 gr_mm_x100_100 µm_300 µm_100 %_new_marker.xml'
-path_Raman_2 = 'C:/Data_Microscope/241104 PEA2MAPb2I7_degradation/FormatCov/RamanMap_n2_2_0_1 s_785 nm_600 gr_mm_x100_100 µm_300 µm_100 %_new_marker_after_illum.xml'
+path_PL_1 = 'C:/Data_Microscope/241104_MS_PMPI2/FormatCov/PLMap_n2_2_0_1 s_532 nm_600 gr_mm_x100_100 µm_300 µm_0_025 %_new_marker.xml'
+path_PL_2 = 'C:/Data_Microscope/241104_MS_PMPI2/FormatCov/PLMap_n2_2_0_1 s_532 nm_600 gr_mm_x100_100 µm_300 µm_0_025 %_new_marker_after_illum.xml'
+path_Raman_1 = 'C:/Data_Microscope/241104_MS_PMPI2/FormatCov/RamanMap_n2_2_0_1 s_785 nm_600 gr_mm_x100_100 µm_300 µm_100 %_new_marker.xml'
+path_Raman_2 = 'C:/Data_Microscope/241104_MS_PMPI2/FormatCov/RamanMap_n2_2_0_1 s_785 nm_600 gr_mm_x100_100 µm_300 µm_100 %_new_marker_after_illum.xml'
 
 #%% save path
 save_path = 'C:/Data_Microscope/241104 PEA2MAPb2I7_degradation/Analysis/new marker/'
