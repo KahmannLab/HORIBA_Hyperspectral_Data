@@ -46,7 +46,7 @@ def intint_map(data, data_type, spectral_range=None, processed_data=None,
     :param data (LumiSpectrum): hyperspectral data
     :param spectral_range (tuple)(optional): the wavelength or wavenumber range, for example, (500, 700) in nm for PL
     :param data_type (str): the type of the data, either 'PL' or 'Raman'
-    :param warped_data (np.ndarray)(optional): the registered data
+    :param processed_data (np.ndarray)(optional): the registered data
     :return: intint (np.ndarray): the integrated intensity map
     """
     Spectr = data.axes_manager[2].axis
@@ -181,7 +181,7 @@ def create_mask(map2d, value_threshold, min_size, area_threshold):
     return mask
 
 #%% Image registration using ANTs with optional parameters
-def ants_registration(fixed_img, moving_img,type_of_transform,random_seed=None,interpolator='nearestNeighbor',outprefix=None,
+def ants_registration(fixed_img, moving_img,type_of_transform,random_seed=None,interpolator='nearestNeighbor',outprefix='C:/',
                       savefig=False,figname=None,savepath=None):
     """
     Image registration using ANTs
@@ -259,125 +259,14 @@ def transform2map(fixed_data, moving_data, transform, interpolator='nearestNeigh
     moving = ants.from_numpy(moving_data)
     warped_map = ants.apply_transforms(fixed=fixed, moving=moving, transformlist=transform['fwdtransforms'], interpolator=interpolator).numpy()
     return warped_map
-
-#%% Get the explained variance ratio plot (scree plot)
-def plot_evr(data, n_components):
-    """
-    Plot the explained variance ratio by PCA
-    :param data (LumiSpectrum): hyperspectral data
-    :param n_components: the number of principal components shown in the plot
-    :return: None
-    """
-    evr = data.get_explained_variance_ratio()
-    plt.plot(evr.data[:n_components], 'ro', markersize=5)
-    plt.xlabel('Principal component index',fontsize=12,labelpad=10)
-    plt.ylabel('Explained variance ratio',fontsize=12,labelpad=10)
-    plt.xticks(fontsize=10)
-    plt.yticks(fontsize=10)
-    plt.yscale('log')
-    plt.tick_params(which='both', direction='in',right=True, top=True)
-    plt.gca().xaxis.set_major_locator(MultipleLocator(10))
-    plt.gca().xaxis.set_minor_locator(AutoMinorLocator(5))
-    plt.tight_layout()
-    plt.show()
-
-#%% Plot the PC spectra
-def PC_spc(data,component_index, data_type,save_path=None):
-    """
-    Plot the spectrum of the individual principal component
-    :param data (LumiSpectrum): hyperspectral data
-    :param component_index (int): the index of the principal component starting from 0 (Note the index given by Hyperspy is starting from 0, not 1)
-    :param data_type (str): the type of the data, either 'PL' or 'Raman'
-    :param save_path (str)(optional): the path to save the figure
-    """
-    PCs = data.get_decomposition_factors()
-    Spectr = PCs.axes_manager[1].axis
-    Intens = PCs.data[component_index,:]
-    fig, ax = plt.subplots()
-    ax.plot(Spectr, Intens)
-    if data_type == 'PL':
-        xlabel = 'Wavelength (nm)'
-        ylabel = 'PL intensity (counts)'
-        def lambda2energy(Spectr):
-            return 1239.8 / Spectr
-        def energy2lambda(Spectr):
-            return 1239.8 / Spectr
-        secx=ax.secondary_xaxis('top', functions=(lambda2energy, energy2lambda))
-        secx.set_xlabel('Energy (eV)', fontsize=12, labelpad=10)
-        secx.tick_params(which='both', direction='in', right=True, top=True)
-        ax.xaxis.set_major_locator(MultipleLocator(50))
-        ax.xaxis.set_minor_locator(AutoMinorLocator(2))
-    elif data_type == 'Raman':
-        xlabel = 'Raman shift (cm$^{-1}$)'
-        ylabel = 'Raman intensity (counts)'
-        ax.xaxis.set_major_locator(MultipleLocator(500))
-        ax.xaxis.set_minor_locator(AutoMinorLocator(5))
-    ax.set_xlabel(xlabel, fontsize=12, labelpad=10)
-    ax.set_ylabel(ylabel, fontsize=12, labelpad=10)
-    ax.set_title('{} spectrum based on the {}. PC'.format(data_type,component_index+1)) # the index shown in the title is starting from 1
-    plt.tight_layout()
-    if save_path is not None:
-        plt.savefig(save_path,transparent=True,dpi=300)
-    plt.show()
-
-#%% Plot the loading map of the given PC
-def loading_map(dataPCA, component_index,save_path=None):
-    '''
-    Plot the loading map of the given PC
-    :param dataPCA: the data after PCA decomposition
-    :param component_index: the index of the principal component starting from 1
-    :return:
-    '''
-    loading_maps = dataPCA.get_decomposition_loadings()
-    loading_map = loading_maps.data[component_index-1,:,:]
-    hist, bins = np.histogram(loading_map.flatten(), bins=500)
-    cum_counts = np.cumsum(hist)
-    tot_counts = np.sum(hist)
-    tot_counts_5 = tot_counts * 0.05
-    tot_counts_95 = tot_counts * 0.95
-    bin_edges = bins[np.where((cum_counts >= tot_counts_5) & (cum_counts <= tot_counts_95))]
-
-    scalebar = ScaleBar(dataPCA.axes_manager[0].scale, "um", length_fraction=0.13, location='lower right',
-                        box_color=None, color='white', frameon=False, width_fraction=0.02, font_properties={'size': 12,
-                                                                                                        'weight': 'bold',
-                                                                                                        'math_fontfamily': 'dejavusans'})
-    fig, ax = plt.subplots()
-    cmap = ax.imshow(loading_map, vmin=bin_edges[0], vmax=bin_edges[-1])
-    ax.set_axis_off()
-    ax.add_artist(scalebar)
-    ax.set_title('Loading map of the {}. PC'.format(component_index))
-    cbar = fig.colorbar(cmap, ax=ax)
-    cbar.set_label('Loading value')
-    plt.tight_layout()
-    if save_path is not None:
-        plt.savefig(save_path,transparent=True,dpi=300)
-    plt.show()
-
-#%% Reconstruct the data using given number of PCs or a certain PC
-def rec_data(data, num_PCs, single_PC=None):
-    """
-    Reconstruct the data using the given number of PCs or a certain PC
-    :param data (LumiSpectrum): hyperspectral data
-    :param num_PCs (int)(optional): the number of principal components or the index of the certain component starting from 0
-    :param single_PC (tuple)(optional): if True, the single component is used.
-    :return: rec_data (np.ndarray): the reconstructed data
-    """
-    if single_PC is True:
-        rec_data = data.get_decomposition_model(components=[num_PCs])
-    else:
-        rec_data = data.get_decomposition_model(components=num_PCs)
-    return rec_data
 #%% Define gaussian fitting function for the triple Gaussian
+from scipy.optimize import curve_fit
 def gaussian(x, amp, cen, wid):
     return amp * np.exp(-(x - cen)**2 / (2 * wid**2))
 def triple_gaussian(x, amp1, cen1, wid1, amp2, cen2, wid2, amp3, cen3, wid3):
     return (amp1 * np.exp(-(x - cen1)**2 / (2 * wid1**2)) +
             amp2 * np.exp(-(x - cen2)**2 / (2 * wid2**2)) +
             amp3 * np.exp(-(x - cen3)**2 / (2 * wid3**2)))
-
-# Function to integrate a Gaussian function
-def gaussian_integral(amplitude, width):
-    return amplitude * np.sqrt(2 * np.pi) * width
 #%% tripple gaussian fitting to extract parameters and errors
 def gaussian_fit(data, func_name='triple_gaussian',initial_guesses=None,bounds=(-np.inf,np.inf)):
     """
@@ -390,8 +279,12 @@ def gaussian_fit(data, func_name='triple_gaussian',initial_guesses=None,bounds=(
     """
     if func_name == 'triple_gaussian':
         func = triple_gaussian
-    fit_params = np.zeros((data.data.shape[0], data.data.shape[1], 9))
-    fit_errors = np.zeros((data.data.shape[0], data.data.shape[1], 9))
+        fit_params = np.zeros((data.data.shape[0], data.data.shape[1], 9))
+        fit_errors = np.zeros((data.data.shape[0], data.data.shape[1], 9))
+    elif func_name == 'gaussian':
+        func = gaussian
+        fit_params = np.zeros((data.data.shape[0], data.data.shape[1], 3))
+        fit_errors = np.zeros((data.data.shape[0], data.data.shape[1], 3))
     wavelengths = data.axes_manager[2].axis
     for i in range(data.data.shape[0]):
         for j in range(data.data.shape[1]):
@@ -433,9 +326,9 @@ def plot_gaussian_fit(data, params, func_name='triple_gaussian', px_yx=(0,0),sav
         ax[0].plot(wavelengths, fit3, label='Gaussian 3',color='c')
     elif func_name == 'gaussian':
         func = gaussian
-    fit = func(wavelengths, *params_pixel)
-    residuals = spectrum - fit
-    ax[0].plot(wavelengths, fit, label='Fit',color='r')
+        fit = func(wavelengths, *params_pixel)
+        residuals = spectrum - fit
+        ax[0].plot(wavelengths, fit, label='Fit',color='r')
     ax[1].scatter(wavelengths, residuals, label='Residuals')
     ax[0].set_xlabel('Wavelength (nm)',fontsize=12,labelpad=10)
     ax[0].set_ylabel('PL intensity (counts)',fontsize=12,labelpad=10)
@@ -449,57 +342,10 @@ def plot_gaussian_fit(data, params, func_name='triple_gaussian', px_yx=(0,0),sav
         plt.savefig(save_path,transparent=True,dpi=300)
     plt.show()
     return None
-#%% Functions used to get the integrated intensity of the Gaussian peaks over the entire spectral range
-# Step1: Fit each pixel with multiple Gaussian peaks to extract the integrated intensity of the individual peaks
-from scipy.optimize import curve_fit
-def intint_gaussian(original_data, initial_guesses=None, sum_int_threshold=0,bounds=(-np.inf,np.inf)):
-    """
-    Fit the PL spectrum of a single pixel with the triple Gaussian peaks and extract the integrated intensity of the individual peaks
-    :param original_data (LumiSpectrum): the original hyperspectral data read by hyperspy
-    :param initial_guesses (list): the initial guesses for the Gaussian parameters
-    :param sum_int_threshold (int): the threshold for the sum of the intensity of the spectrum
-    :param bounds (tuple): the bounds for the Gaussian parameters
-    :return: intint_gaussian1 (np.ndarray): the integrated intensity map of the 1st Gaussian peak,
-                intint_gaussian2 (np.ndarray): the integrated intensity map of the 2nd Gaussian peak,
-                intint_gaussian3 (np.ndarray): the integrated intensity map of the 3rd Gaussian peak
-    """
-    wavelengths = original_data.axes_manager[2].axis
-    # Initialize intensity maps for each Gaussian
-    map_shape = original_data.data.shape
-    intint_gaussian1 = np.zeros(map_shape[:2])
-    intint_gaussian2 = np.zeros(map_shape[:2])
-    intint_gaussian3 = np.zeros(map_shape[:2])
-
-    # Loop through each pixel in the spatial dimensions
-    for i in range(map_shape[0]):
-        for j in range(map_shape[1]):
-            spectrum = original_data.data[i, j, :]
-            # mask the fiducial marker area, the intensity sum of the pixel is below threshold (according to the rough PL integrated intensity map)
-            if spectrum.sum() < sum_int_threshold:
-                intint_gaussian1[i, j] = 0
-                intint_gaussian2[i, j] = 0
-                intint_gaussian3[i, j] = 0
-                continue
-            try:
-                # Fit the spectrum with the triple Gaussian function
-                params, _ = curve_fit(triple_gaussian, wavelengths, spectrum, p0=initial_guesses,bounds=bounds)
-
-                # Extract Gaussian parameters and calculate the integrated intensities
-                amp1, cen1, wid1, amp2, cen2, wid2, amp3, cen3, wid3 = params
-                intint_gaussian1[i, j] = gaussian_integral(amp1, wid1)
-                intint_gaussian2[i, j] = gaussian_integral(amp2, wid2)
-                intint_gaussian3[i, j] = gaussian_integral(amp3, wid3)
-            except RuntimeError:
-                # If the fit fails, set the integrated intensities to zero
-                print('The fit failed at pixel ({}, {})'.format(i, j))
-                intint_gaussian1[i, j] = 0
-                intint_gaussian2[i, j] = 0
-                intint_gaussian3[i, j] = 0
-
-    return intint_gaussian1, intint_gaussian2, intint_gaussian3
-
 #%% Step2: Plot the integrated intensity map of the individual Gaussian peak over the entire spectral range
-def plot_intint_gaussian(original_data,intint_gaussian,cbar_label='PL integrated intensity (counts)',ROI=None,save_path=None):
+from scipy import integrate
+def plot_intint_gaussian(original_data,params,cbar_label='PL integrated intensity (counts)',cbar_adj=True, ROI=None,
+                         sum_threshold=None,save_path=None):
     """
     Plot the integrated intensity maps of the individual Gaussian peaks over the entire spectral range
     :param original_data (LumiSpectrum): the original hyperspectral data used to provide the scale information
@@ -509,6 +355,22 @@ def plot_intint_gaussian(original_data,intint_gaussian,cbar_label='PL integrated
     :param save_path (str)(optional): the path to save the figure
     :return: None
     """
+    # Initialize intensity maps for each Gaussian
+    wls = original_data.axes_manager[2].axis
+    map_shape = original_data.data.shape
+    intint_gaussian = np.zeros(map_shape[:2])
+    vmin = np.min(intint_gaussian)
+    vmax = np.max(intint_gaussian)
+    # Loop through each pixel in the spatial dimensions
+    for i in range(map_shape[0]):
+        for j in range(map_shape[1]):
+            #intint_gaussian[i, j] = gaussian_integral(params[i, j, 0], params[i, j, 2])
+            intint_gaussian[i, j] = integrate.quad(gaussian, wls[0], wls[-1],
+                                                   args=(params[i, j, 0], params[i, j, 1], params[i, j, 2]))[0]
+            spectrum = original_data.data[i, j, :]
+            if sum_threshold is not None:
+                if np.sum(spectrum) < sum_threshold:
+                    intint_gaussian[i, j] = 0 # use the sum of the intensity to filter out the bad pixels or background
     # integrate a single Gaussian peak
     # use histogram to avoid the bad pixel in order to get a better ratio map
     hist, bins = np.histogram(intint_gaussian.flatten(), bins=500)
@@ -517,12 +379,15 @@ def plot_intint_gaussian(original_data,intint_gaussian,cbar_label='PL integrated
     tot_counts_5 = tot_counts * 0.05
     tot_counts_95 = tot_counts * 0.95
     bin_edges = bins[np.where((cum_counts >= tot_counts_5) & (cum_counts <= tot_counts_95))]
+    if cbar_adj:
+        vmin = bin_edges[0]
+        vmax = bin_edges[-1]
     fig, ax = plt.subplots()
     if ROI is not None:
         intint_gaussian_ROI = intint_gaussian[ROI[1]:ROI[1]+ROI[3],ROI[0]:ROI[0]+ROI[2]]
-        cmap = ax.imshow(intint_gaussian_ROI, vmin=bin_edges[0], vmax=bin_edges[-1])
+        cmap = ax.imshow(intint_gaussian_ROI, vmin=vmin, vmax=vmax)
     else:
-        cmap = ax.imshow(intint_gaussian, vmin=bin_edges[0], vmax=bin_edges[-1])
+        cmap = ax.imshow(intint_gaussian, vmin=vmin, vmax=vmax)
     ax.set_axis_off()
     scalebar = ScaleBar(original_data.axes_manager[0].scale, "um", length_fraction=0.13, location='lower right',
                         box_color=None, color='white', frameon=False, width_fraction=0.02, font_properties={'size': 12,
@@ -536,6 +401,7 @@ def plot_intint_gaussian(original_data,intint_gaussian,cbar_label='PL integrated
         plt.savefig(save_path,transparent=True,dpi=300)
     plt.show()
 
+    return intint_gaussian
 #%% Plot the centre of mass map
 # Calculate and plot the COM of the PL spectrum for all pixels using vectorized operations
 def plot_com_map(original_data, processed_data=None, lambda1=None, lambda2=None, params_ROI=None,data_type='PL',save_path=None):
@@ -652,16 +518,16 @@ def point_marker(map_data,original_data, YX,cbarlabel='Intensity (counts)',save_
     colors = ['m', 'k', 'b', 'r', 'c', 'g']
     for i in range(len(YX)):
         ax.plot(YX[i][1], YX[i][0], 'o', mfc='none', mec=colors[i],mew=3, markersize=15)
-    cbar=fig.colorbar(cmap, ax=ax, format='%.1f')
+    cbar=fig.colorbar(cmap, ax=ax)
     cbar.set_label(cbarlabel, fontsize=12, labelpad=10)
     plt.tight_layout()
     if save_path is not None:
         plt.savefig(save_path,transparent=True,dpi=300)
     plt.show()
 
-
 #%% Extract the spectrum at the points of interest and plot them on the same figure
-def Spectrum_extracted(original_data, YX, data_type,processed_data=None,x_lim=None,y_lim=None,spc_labels=None,save_path=None):
+def Spectrum_extracted(original_data, YX, data_type,major_locator=50,n_minor_locator=2,processed_data=None,
+                       x_lim=None,y_lim=None,spc_labels=None,save_path=None):
     """
     Plot the spectrum at the points of interest on the same figure
     :param original_data (LumiSpectrum): hyperspectral data read by Hyperspy used to provide the spectral axis information
@@ -694,18 +560,17 @@ def Spectrum_extracted(original_data, YX, data_type,processed_data=None,x_lim=No
         secx = ax.secondary_xaxis('top', functions=(lambda Spectr: 1239.8 / Spectr, lambda Spectr: 1239.8 / Spectr))
         secx.set_xlabel('Energy (eV)', fontsize=12, labelpad=10)
         secx.tick_params(which='both', direction='in', right=True, top=True)
-        plt.gca().xaxis.set_major_locator(MultipleLocator(50))
-        plt.gca().xaxis.set_minor_locator(AutoMinorLocator(2))
+        plt.gca().xaxis.set_major_locator(MultipleLocator(major_locator))
+        plt.gca().xaxis.set_minor_locator(AutoMinorLocator(n_minor_locator))
         plt.tick_params(which='both', direction='in', right=True, top=False)
     elif data_type == 'Raman':
         ax.set_xlabel('Raman shift (cm$^{-1}$)', fontsize=12, labelpad=10)
         ax.tick_params(which='both', direction='in', right=True, top=True)
-        plt.gca().xaxis.set_major_locator(MultipleLocator(200))
-        plt.gca().xaxis.set_minor_locator(AutoMinorLocator(2))
+        plt.gca().xaxis.set_major_locator(MultipleLocator(major_locator))
+        plt.gca().xaxis.set_minor_locator(AutoMinorLocator(n_minor_locator))
         plt.tick_params(which='both', direction='in', right=True, top=True)
     if x_lim is not None:
         ax.set_xlim(x_lim)
-        plt.gca().xaxis.set_major_locator(MultipleLocator(x_lim[1]/10))
     if y_lim is not None:
         ax.set_ylim(y_lim)
     ax.set_ylabel('{} intensity (counts)'.format(data_type), fontsize=12, labelpad=10)
@@ -714,14 +579,14 @@ def Spectrum_extracted(original_data, YX, data_type,processed_data=None,x_lim=No
     if save_path is not None:
         plt.savefig(save_path,transparent=True,dpi=300)
     plt.show()
-
-
 #%% Plot an average spectrum
-def avg_spectrum(data, data_type,params_ROI=None,save_path=None):
+def avg_spectrum(data, data_type,major_locator=50,n_minor_locator=2,params_ROI=None,save_path=None):
     """
     Plot the average spectrum over the whole map
     :param data (LumiSpectrum): hyperspectral data
     :param data_type (str): the type of the data, either 'PL' or 'Raman'
+    :param major_locator (int): the major locator for the x-axis
+    :param n_minor_locator (int): the minor locator for the x-axis
     :param params_ROI (tuple)(optional): the region of interest (ROI) in the format (x, y, width, height)
     :param save_path (str)(optional): the path to save the figure
     :return:
@@ -746,12 +611,12 @@ def avg_spectrum(data, data_type,params_ROI=None,save_path=None):
         secx=ax.secondary_xaxis('top', functions=(lambda2energy, energy2lambda))
         secx.set_xlabel('Energy (eV)', fontsize=12, labelpad=10)
         secx.tick_params(which='both', direction='in', right=True, top=True)
-        ax.xaxis.set_major_locator(MultipleLocator(50))
-        ax.xaxis.set_minor_locator(AutoMinorLocator(2))
+        ax.xaxis.set_major_locator(MultipleLocator(major_locator))
+        ax.xaxis.set_minor_locator(AutoMinorLocator(n_minor_locator))
     elif data_type == 'Raman':
         x_label = 'Raman shift (cm$^{-1}$)'
-        ax.xaxis.set_major_locator(MultipleLocator(500))
-        ax.xaxis.set_minor_locator(AutoMinorLocator(5))
+        ax.xaxis.set_major_locator(MultipleLocator(major_locator))
+        ax.xaxis.set_minor_locator(AutoMinorLocator(n_minor_locator))
     ax.set_xlabel(x_label, fontsize=12, labelpad=10)
     ax.set_ylabel('{} intensity (counts)'.format(data_type), fontsize=12, labelpad=10)
     ax.tick_params(which='both', direction='in', right=True, top=False)
@@ -762,33 +627,28 @@ def avg_spectrum(data, data_type,params_ROI=None,save_path=None):
     return avg_intens
 
 #%% Compare the spectra on the same figure, for example, the average spectrum before & after illumination
-def spectra_compare(data1, data2, data_type,original_data1, original_data2=None,lambda_range=None,save_path=None):
+def plot_spectra(spc_list, wl_list, data_type, xlim=None,ylim=None,label_list=None,
+                 major_locator=50,n_minor_locator=2,save_path=None):
     """
     Plot two spectra on the same figure
-    :param data1 (np.ndarray): spectrum 1
-    :param data2 (np.ndarray): spectrum 2
+    :param spc_list (list): the list of the spectra
+    :param wl_list (list): the list of the wavelengths of the spectra
     :param data_type (str): the type of the data, either 'PL' or 'Raman'
-    :param original_data1 (LumiSpectrum): the original data read by Hyperspy providing spectral info for data1
-    :param original_data2 (LumiSpectrum)(optional): the original data read by Hyperspy providing spectral info for data2,
-            if none, the spectral axis of data2 is the same as that of data1
-    :param lambda_range (tuple)(optional): the range of the wavelength/wavenumber for the plot
+    :param save_path (str)(optional): the path to save the figure
+    :param xlim (tuple)(optional): the x limit of the plot
+    :param ylim (tuple)(optional): the y limit of the plot
+    :param label_list (list)(optional): the list of the labels of the spectra
+    :param major_locator (int): the major locator for the x-axis
+    :param n_minor_locator (int): the number of minor locators for the x-axis
     :param save_path (str)(optional): the path to save the figure
     :return:
     """
     fig, ax = plt.subplots()
-    if lambda_range is not None:
-        index1 = abs(original_data1.axes_manager[2].axis-lambda_range[0]).argmin()
-        index2 = abs(original_data1.axes_manager[2].axis-lambda_range[1]).argmin()
-        data1 = data1[index1:index2]
-        data2 = data2[index1:index2]
-    else:
-        index1 = 0
-        index2 = original_data1.data.shape[2]-1
-    ax.plot(original_data1.axes_manager[2].axis[index1:index2], data1[index1:index2], label='Before')
-    if original_data2 is not None:
-        ax.plot(original_data2.axes_manager[2].axis[index1:index2], data2[index1:index2], label='After')
-    else:
-        ax.plot(original_data1.axes_manager[2].axis[index1:index2], data2[index1:index2], label='After')
+    for i in range(len(spc_list)):
+        if label_list is not None:
+            ax.plot(wl_list[i], spc_list[i], label=label_list[i])
+        else:
+            ax.plot(wl_list[i], spc_list[i])
     if data_type == 'PL':
         x_label = 'Wavelength (nm)'
         def lambda2energy(Spectr):
@@ -799,24 +659,19 @@ def spectra_compare(data1, data2, data_type,original_data1, original_data2=None,
         secx = ax.secondary_xaxis('top', functions=(lambda2energy, energy2lambda))
         secx.set_xlabel('Energy (eV)', fontsize=12, labelpad=10)
         secx.tick_params(which='both', direction='in', right=True, top=True)
-        if lambda_range is not None:
-            ax.xaxis.set_major_locator(MultipleLocator(20))
-            ax.xaxis.set_minor_locator(AutoMinorLocator(2))
-        else:
-            ax.xaxis.set_major_locator(MultipleLocator(50))
-            ax.xaxis.set_minor_locator(AutoMinorLocator(2))
     elif data_type == 'Raman':
         x_label = 'Raman shift (cm$^{-1}$)'
-        if lambda_range is not None:
-            ax.xaxis.set_major_locator(MultipleLocator(50))
-            ax.xaxis.set_minor_locator(AutoMinorLocator(2))
-        else:
-            ax.xaxis.set_major_locator(MultipleLocator(500))
-            ax.xaxis.set_minor_locator(AutoMinorLocator(5))
     ax.set_xlabel(x_label, fontsize=12, labelpad=10)
     ax.set_ylabel('{} intensity (counts)'.format(data_type), fontsize=12, labelpad=10)
     ax.tick_params(which='both', direction='in', right=True, top=True)
-    plt.legend()
+    ax.xaxis.set_major_locator(MultipleLocator(major_locator))
+    ax.xaxis.set_minor_locator(AutoMinorLocator(n_minor_locator))
+    if xlim is not None:
+        ax.set_xlim(xlim)
+    if ylim is not None:
+        ax.set_ylim(ylim)
+    if label_list is not None:
+        plt.legend()
     plt.tight_layout()
     if save_path is not None:
         plt.savefig(save_path,transparent=True,dpi=300)
@@ -918,4 +773,26 @@ def plot_hist(dataMap, labels=None, spread=True, bins=100, bins_range=None, x_la
     plt.tight_layout()
     if save_path is not None:
         plt.savefig(save_path,transparent=True,dpi=300)
+    plt.show()
+#%% Plot 2D histogram of the correlative data
+def plot_2d_hist(data_list, bins=50,labels=['PL intensity (counts)','Raman intensity (counts)'],save_path=None):
+    '''
+    Plot 2D histogram of the intensity maps
+    :param data_list (list): the list of 2 datasets, for example, the PL and Raman intensity maps
+    :param bins (int): the number of bins, default=50
+    :param labels (list): the labels of the x and y axes
+    :param save_path (str)(optional): the path to save the figure
+    '''
+    data1_flat = data_list[0].flatten()
+    data2_flat = data_list[1].flatten()
+    histogram, x_edges, y_edges = np.histogram2d(data1_flat, data2_flat, bins=bins)
+    fig, ax = plt.subplots()
+    cmap = ax.pcolormesh(x_edges, y_edges, histogram.T, cmap='viridis')
+    ax.set_xlabel(labels[0])
+    ax.set_ylabel(labels[1])
+    cbar = fig.colorbar(cmap, ax=ax)
+    cbar.set_label('Probability density')
+    plt.tight_layout()
+    if save_path is not None:
+        plt.savefig(save_path, transparent=True, dpi=300)
     plt.show()
