@@ -8,7 +8,7 @@ from matplotlib.ticker import MultipleLocator, AutoMinorLocator
 from importlib import reload
 #%% Just run this cell if changes are made in the module HORIBA_HyperspectralData
 reload(HSD)
-#%%
+#%% Just run this cell if changes are made in the module PCA
 reload(PCA)
 #%% load the hyperspectral data in xml format
 # here we load the PL and Raman data before and after illumination, named as 1 and 2, respectively
@@ -168,8 +168,12 @@ HSD.Spectrum_extracted(rec_data_Raman_1, YX_PL1_guas1, data_type='Raman',spc_lab
 #%% Plot Raman integrated intensity map in ROI using the registered reconstructed Raman data 1
 warped_rec_Raman_intint_1 = HSD.intint_map(rec_data_Raman_1, 'Raman',(70, 100),warped_rec_data_Raman_1[5:55,5:55,:])
 #%% Plot Raman (relative) intensity map at 100 cm^-1 in ROI using the registered reconstructed Raman data 1
-warped_rec_norm_data_Raman_1 = warped_rec_data_Raman_1/np.max(warped_rec_data_Raman_1,axis=2)[:,:,np.newaxis]
-warped_rec_Raman_int_1 = HSD.int_map(rec_data_Raman_1, 100, 'RamanRatio',processed_data=warped_rec_norm_data_Raman_1[5:55,5:55,:])
+warped_rec_Raman_1_int_1 = HSD.int_map(rec_data_Raman_1, 1378, 'Raman',processed_data=warped_rec_data_Raman_1[5:55,5:55,:])
+warped_rec_Raman_1_int_2 = HSD.int_map(rec_data_Raman_1, 90, 'Raman',processed_data=warped_rec_data_Raman_1[5:55,5:55,:])
+rel_int_Raman_1 = warped_rec_Raman_1_int_2/warped_rec_Raman_1_int_1
+#%% correlation map between the PL integrated intensity over gaussian peak 1 and relative Raman intensity at 90 cm^-1
+HSD.plot_2d_hist([rec_PL1_intint_gaus3[5:55,5:55], rel_int_Raman_1],
+                 labels=['PL integrated intensity (a.u.)','Relative Raman intensity (a.u.)'])
 #%% Plot PL average spectrum
 avg_PL_1 = HSD.avg_spectrum(data_PL_1, 'PL')
 #%% Plot PL average spectrum PL data 2
@@ -189,7 +193,7 @@ axes_Raman = [data_Raman_1.axes_manager[2].axis, data_Raman_2.axes_manager[2].ax
 HSD.plot_spectra(spcs_Raman, axes_Raman, 'Raman',major_locator=500, n_minor_locator=5,
                  label_list=['Raman before illumination','Raman after illumination'])
 #%% Find the maxima in the average PL spectrum
-HSD.find_maxima(data_PL_1, avg_PL_1, 'PL', 5,10)
+HSD.find_maxima(data_Raman_1, avg_Raman_1, 'Raman', 0.3,25)
 #%% Plot a histogram of the PL integrated intensity map
 HSD.plot_hist(rec_PL1_intint_gaus1[5:55,5:55], 'PL integrated intensity (a.u.)', bins=500,
               bins_range=(1,1000), spread=True)
@@ -213,6 +217,17 @@ HSD.plot_hist(hist_Gaus3_PL1, labels=['PL before illumination','PL after illumin
                 save_path=None)
                 #save_path=save_path+'Gaus3_PL_histogram.png')
 
+#%% Gaussian fit for PL spectrum of a single pixel, e.g. maximum in the PL integrated intensity map 1
+# for PL data 1
+HSD.plot_gaussian_fit(rec_data_PL_1, PL1_gaus_params, func_name='triple_gaussian', px_YX=YX_PL1_guas1[0])
 #%% Plot loading maps to identify the spatial distribution of the individual Gaussian peaks
 # loading of the 2nd PC: which represents a distribution of the emission at 650 nm
 PCA.loading_map(rec_data_PL_1,2)
+
+#%% animation to show the reconstructed PL data 1
+PCA.rec_spc_animation(data_PL_1, px=(15,25), start_nPCs=200, end_nPCs=20, data_type='PL',
+                      save_path=save_path+'PL1_reconstructed_animation.gif')
+#%% animation to show the reconstructed Raman data 1
+PCA.rec_spc_animation(data_Raman_1, px=(15,25), start_nPCs=200, end_nPCs=20, data_type='Raman',
+                      major_locator=500, n_minor_locator=5,
+                      save_path=save_path+'Raman1_reconstructed_animation.gif')
