@@ -98,7 +98,7 @@ def loading_map(dataPCA, component_index,save_path=None):
         plt.savefig(save_path,transparent=True,dpi=300)
     plt.show()
 #%% Reconstruct the data using given number of PCs or a certain PC
-def rec_data(dataPCA, num_PCs, single_PC=None):
+def rec_data(dataPCA, num_PCs, single_PC=False):
     """
     Reconstruct the data using the given number of PCs or a certain PC
     :param dataPCA (LumiSpectrum): hyperspectral data with PCA decomposition
@@ -111,3 +111,47 @@ def rec_data(dataPCA, num_PCs, single_PC=None):
     else:
         rec_data = dataPCA.get_decomposition_model(components=num_PCs)
     return rec_data
+
+#%% Reconstruction animation
+from matplotlib.animation import FuncAnimation
+def rec_spc_animation(dataPCA, px, start_nPCs, end_nPCs=1, save_path='C:/animation.gif', data_type='PL',
+                      major_locator=50, n_minor_locator=2,
+                      writer='pillow',fps=10):
+    """
+    Create an animation of the data reconstruction using different number of PCs
+    :param dataPCA:
+    :param px: the pixel to be reconstructed (x,y)
+    :param start_nPCs:
+    :param end_nPCs:
+    :param data_type:
+    :param save_path:
+    :param writer:
+    :param fps:
+    :return:
+    """
+    wl = dataPCA.axes_manager[2].axis
+    rec_spcs = []
+    for i in range(start_nPCs, end_nPCs+1, -1):
+        rec_data = dataPCA.get_decomposition_model(components=i)
+        rec_spc = rec_data.data[px[0], px[1], :]
+        rec_spcs.append(rec_spc)
+    rec_spcs = np.array(rec_spcs)
+    fig, ax = plt.subplots(figsize=(8, 6))
+
+    def update_plot(frame):
+        ax.clear()
+        spc = rec_spcs[frame]
+        ax.plot(wl, spc)
+        if data_type == 'PL':
+            ax.set_xlabel('Wavelength (nm)', fontsize=12, labelpad=10)
+            ax.set_ylabel('PL intensity (counts)', fontsize=12, labelpad=10)
+        elif data_type == 'Raman':
+            ax.set_xlabel('Raman shift (cm$^{-1}$)', fontsize=12, labelpad=10)
+            ax.set_ylabel('Raman intensity (counts)', fontsize=12, labelpad=10)
+        ax.set_title('Reconstructed spectrum using the first {} PC(s)'.format(start_nPCs - frame),fontsize=12, pad=10)
+        ax.tick_params(which='both', direction='in', right=True, top=True)
+        ax.xaxis.set_major_locator(MultipleLocator(major_locator))
+        ax.xaxis.set_minor_locator(AutoMinorLocator(n_minor_locator))
+
+    ani = FuncAnimation(fig, update_plot, frames=len(rec_spcs), repeat=False)
+    ani.save(save_path, writer=writer, fps=fps)
