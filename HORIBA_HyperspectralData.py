@@ -302,33 +302,34 @@ def gaussian_fit(data, func_name='triple_gaussian',initial_guesses=None,bounds=(
                 fit_errors[i, j, :] = 0
     return fit_params, fit_errors
 #%% Plot spectra with the Gaussian fitting and the residuals at the given pixel
-def plot_gaussian_fit(data, params, func_name='triple_gaussian', px_yx=(0,0),save_path=None):
+def plot_gaussian_fit(data, params, func_name='triple_gaussian', px_YX=(0,0), save_path=None):
     """
     Plot the spectrum with the triple Gaussian fitting and the residuals at the given pixel
     :param original_data (LumiSpectrum): the original hyperspectral data
     :param params (np.ndarray): the Gaussian parameters
-    :param px_xy (tuple): the coordinates of the pixel in the format (y, x)
+    :param px_YX (tuple): the coordinates of the pixel in the format (y,x)
     :param save_path (str)(optional): the path to save the figure
     :return: None
     """
     fig, ax = plt.subplots(1, 2, figsize=(13, 5))
     wavelengths = data.axes_manager[2].axis
-    spectrum = data.data[px_yx[0], px_yx[1], :]
-    params_pixel = params[px_yx[0], px_yx[1], :]
+    spectrum = data.data[px_YX[0], px_YX[1], :]
+    params_pixel = params[px_YX[0], px_YX[1], :]
     ax[0].scatter(wavelengths, spectrum, label='Data')
     if func_name == 'triple_gaussian':
-        func = triple_gaussian
         fit1 = gaussian(wavelengths, *params_pixel[:3])
         fit2 = gaussian(wavelengths, *params_pixel[3:6])
         fit3 = gaussian(wavelengths, *params_pixel[6:])
+        fit = triple_gaussian(wavelengths, *params_pixel)
+        residuals = spectrum - fit
         ax[0].plot(wavelengths, fit1, label='Gaussian 1',color='y')
         ax[0].plot(wavelengths, fit2, label='Gaussian 2',color='g')
         ax[0].plot(wavelengths, fit3, label='Gaussian 3',color='c')
+        ax[0].plot(wavelengths, fit, label='Triple Gaussian fit',color='r')
     elif func_name == 'gaussian':
-        func = gaussian
-        fit = func(wavelengths, *params_pixel)
-        residuals = spectrum - fit
+        fit = gaussian(wavelengths, *params_pixel)
         ax[0].plot(wavelengths, fit, label='Fit',color='r')
+        residuals = spectrum - fit
     ax[1].scatter(wavelengths, residuals, label='Residuals')
     ax[0].set_xlabel('Wavelength (nm)',fontsize=12,labelpad=10)
     ax[0].set_ylabel('PL intensity (counts)',fontsize=12,labelpad=10)
@@ -337,6 +338,7 @@ def plot_gaussian_fit(data, params, func_name='triple_gaussian', px_yx=(0,0),sav
     ax[0].tick_params(which='both', direction='in', right=True, top=True)
     ax[1].tick_params(which='both', direction='in', right=True, top=True)
     ax[0].legend()
+    ax[1].legend()
     plt.tight_layout()
     if save_path is not None:
         plt.savefig(save_path,transparent=True,dpi=300)
