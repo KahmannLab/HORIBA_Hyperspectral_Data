@@ -582,7 +582,9 @@ def Spectrum_extracted(original_data, YX, data_type,major_locator=50,n_minor_loc
         plt.savefig(save_path,transparent=True,dpi=300)
     plt.show()
 #%% Plot an average spectrum
-def avg_spectrum(data, data_type,major_locator=50,n_minor_locator=2,params_ROI=None,save_path=None):
+def avg_spectrum(data, data_type,major_locator=50,n_minor_locator=2,params_ROI=None,
+                 savefig=False,figname=None,
+                 savefile=False, filename=None, save_path=None):
     """
     Plot the average spectrum over the whole map
     :param data (LumiSpectrum): hyperspectral data
@@ -623,14 +625,22 @@ def avg_spectrum(data, data_type,major_locator=50,n_minor_locator=2,params_ROI=N
     ax.set_ylabel('{} intensity (counts)'.format(data_type), fontsize=12, labelpad=10)
     ax.tick_params(which='both', direction='in', right=True, top=False)
     plt.tight_layout()
-    if save_path is not None:
-        plt.savefig(save_path,transparent=True,dpi=300)
+    if savefig:
+        if figname is None:
+            print('Please provide a figure name')
+        else:
+            plt.savefig(save_path+figname+'.png', transparent=True, dpi=300)
     plt.show()
+    if savefile:
+        if filename is None:
+            print('Please provide a file name')
+        else:
+            np.savetxt(save_path + filename + '.txt', avg_intens)
     return avg_intens
 
 #%% Compare the spectra on the same figure, for example, the average spectrum before & after illumination
 def plot_spectra(spc_list, wl_list, data_type, xlim=None,ylim=None,label_list=None,
-                 major_locator=50,n_minor_locator=2,save_path=None):
+                 major_locator=50,n_minor_locator=2,secondary_axis=True,save_path=None):
     """
     Plot two spectra on the same figure
     :param spc_list (list): the list of the spectra
@@ -653,14 +663,15 @@ def plot_spectra(spc_list, wl_list, data_type, xlim=None,ylim=None,label_list=No
             ax.plot(wl_list[i], spc_list[i])
     if data_type == 'PL':
         x_label = 'Wavelength (nm)'
-        def lambda2energy(Spectr):
-            return 1239.8 / Spectr
+        if secondary_axis:
+            def lambda2energy(Spectr):
+                return 1239.8 / Spectr
 
-        def energy2lambda(Spectr):
-            return 1239.8 / Spectr
-        secx = ax.secondary_xaxis('top', functions=(lambda2energy, energy2lambda))
-        secx.set_xlabel('Energy (eV)', fontsize=12, labelpad=10)
-        secx.tick_params(which='both', direction='in', right=True, top=True)
+            def energy2lambda(Spectr):
+                return 1239.8 / Spectr
+            secx = ax.secondary_xaxis('top', functions=(lambda2energy, energy2lambda))
+            secx.set_xlabel('Energy (eV)', fontsize=12, labelpad=10)
+            secx.tick_params(which='both', direction='in', right=True, top=True)
     elif data_type == 'Raman':
         x_label = 'Raman shift (cm$^{-1}$)'
     ax.set_xlabel(x_label, fontsize=12, labelpad=10)
@@ -797,4 +808,45 @@ def plot_2d_hist(data_list, bins=50,labels=['PL intensity (counts)','Raman inten
     plt.tight_layout()
     if save_path is not None:
         plt.savefig(save_path, transparent=True, dpi=300)
+    plt.show()
+#%% Plot the grayscale white light reflection image
+def plot_img(img_data,ROI=None,adj_hist=False,save_path=None):
+    '''
+    Plot the grayscale image
+    :param img_data (DataFrame): the image data read from the txt file using pandas
+    :param ROI (list): (optional) [y_low,y_high,x_low,x_high] (in microns) the region of interest
+    :param adj_hist (bool): (optional) whether to adjust contrast of the image via histogram equalization
+    :param save_path (str): (optional) the path to save the figure
+    :return:
+    '''
+    pixel_size_x = (img_data.axes[1].astype(float).max()-img_data.axes[1].astype(float).min())/img_data.axes[1].size
+    pixel_size_y = (img_data.axes[0].astype(float).max()-img_data.axes[0].astype(float).min())/img_data.axes[0].size
+    scalebar = ScaleBar(pixel_size_x,"um", length_fraction=0.13, location='lower right',
+                        box_color=None, color='white', frameon=False, width_fraction=0.02, font_properties={'size': 12,
+                                                                                                            'weight': 'bold',
+                                                                                                            'math_fontfamily': 'dejavusans'})
+    fig, ax = plt.subplots()
+    if ROI is not None:
+        y_low_idx = np.argmin(np.abs(img_data.axes[0].astype(float)-ROI[0]))
+        y_high_idx = np.argmin(np.abs(img_data.axes[0].astype(float)-ROI[1]))
+        x_low_idx = np.argmin(np.abs(img_data.axes[1].astype(float)-ROI[2]))
+        x_high_idx = np.argmin(np.abs(img_data.axes[1].astype(float)-ROI[3]))
+        img_output = np.flipud(img_data.values[y_high_idx:y_low_idx,x_low_idx:x_high_idx])
+    else:
+        img_output = np.flipud(img_data.values)
+    if adj_hist is True:
+        hist, bins = np.histogram(img_output.flatten(), bins=256, range=(0, 256))
+        cum_counts = np.cumsum(hist)
+        tot_counts = np.sum(hist)
+        tot_counts_5 = tot_counts * 0.01
+        tot_counts_95 = tot_counts * 0.99
+        bin_edges = bins[np.where((cum_counts >= tot_counts_5) & (cum_counts <= tot_counts_95))]
+        ax.imshow(img_output, cmap='gray',vmin=bin_edges[0],vmax=bin_edges[-1])
+    else:
+        ax.imshow(img_output, cmap='gray')
+    ax.set_axis_off()
+    ax.add_artist(scalebar)
+    plt.tight_layout()
+    if save_path is not None:
+        plt.savefig(save_path,transparent=True,dpi=300)
     plt.show()
