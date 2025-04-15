@@ -231,3 +231,9 @@ PCA.rec_spc_animation(data_PL_1, px=(15,25), start_nPCs=200, end_nPCs=20, data_t
 PCA.rec_spc_animation(data_Raman_1, px=(15,25), start_nPCs=200, end_nPCs=20, data_type='Raman',
                       major_locator=500, n_minor_locator=5,
                       save_path=save_path+'Raman1_reconstructed_animation.gif')
+#%% Plot the white light reflection image
+import pandas as pd
+img_Raman_1_path = 'F:/TUC_Data/Data_Microscope/MS013_PEAMAPbI-n2-fre/MS013_241104/FormatCov/RamanMap_n2_2_0_1 s_785 nm_600 gr_mm_x100_100 µm_300 µm_100 %_new_marker.txt'
+img_Raman_1 = pd.read_csv(img_Raman_1_path, sep='\t', header=0, index_col=0)
+#%%
+HSD.plot_img(img_Raman_1)
