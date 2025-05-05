@@ -200,8 +200,8 @@ def ants_registration(fixed_img, moving_img,type_of_transform,random_seed=None,i
     warped_moving = ants.apply_transforms(fixed=fixed, moving=moving, transformlist=transform['fwdtransforms'], interpolator=interpolator).numpy()
     #check the results of the registration
     fig, ax = plt.subplots()
-    ax.imshow(fixed_img, cmap='viridis')
-    ax.imshow(warped_moving, alpha=0.5, cmap='magma')
+    ax.imshow(fixed_img, cmap='gray')
+    ax.imshow(warped_moving, alpha=0.7, cmap='viridis')
     # add a text box to show the random seed
     if random_seed is not None:
         ax.text(0.5, 0.95, 'Random seed: {}'.format(random_seed), horizontalalignment='left',
@@ -230,7 +230,8 @@ def check_registration(fixed_img, warped_moving):
     plt.show()
 
 #%% Apply the transform to the entire hyperspectral image dataset
-def transform2hsi(original_fixed_data, original_moving_data, transform, interpolator='nearestNeighbor'):
+def transform2hsi(original_fixed_data, original_moving_data, transform, interpolator='nearestNeighbor',
+                  transform_type='fwdtransforms'):
     """
     Apply the transformation to the entire hyperspectral image dataset
     :param original_fixed_data (LumiSpectrum): the original hyperspectral image dataset
@@ -239,11 +240,11 @@ def transform2hsi(original_fixed_data, original_moving_data, transform, interpol
     :param interpolator (str)(optional): the interpolator used for resampling the image, default is 'nearestNeighbor'
     :return: warped_data (np.ndarray): the registered hyperspectral image dataset
     """
-    warped_data = np.zeros(original_fixed_data.data.shape)
+    warped_data = np.zeros(original_moving_data.data.shape)
     for i in range(original_fixed_data.data.shape[2]):
         fixed_data = ants.from_numpy(original_fixed_data.data[:,:,i])
         moving_data = ants.from_numpy(original_moving_data.data[:,:,i])
-        warped_data[:,:,i] = ants.apply_transforms(fixed=fixed_data, moving=moving_data, transformlist=transform['fwdtransforms'],interpolator=interpolator).numpy()
+        warped_data[:,:,i] = ants.apply_transforms(fixed=fixed_data, moving=moving_data, transformlist=transform[transform_type],interpolator=interpolator).numpy()
     return warped_data
 #%% Apply the transform to a 2d map/image
 def transform2map(fixed_data, moving_data, transform, interpolator='nearestNeighbor'):
@@ -259,6 +260,46 @@ def transform2map(fixed_data, moving_data, transform, interpolator='nearestNeigh
     moving = ants.from_numpy(moving_data)
     warped_map = ants.apply_transforms(fixed=fixed, moving=moving, transformlist=transform['fwdtransforms'], interpolator=interpolator).numpy()
     return warped_map
+#%% Plot colormap
+def plot_colormap(data, scale=None, cbar_adj=True,cbar_label=None, title=None, save_path=None):
+    """
+    Plot the colormap of the hyperspectral data
+    :param data (np.ndarray): the hyperspectral data
+    :param scale (float)(optional): used for the scalebar of the colormap, default is None
+    :param cbar_adj (bool)(optional): whether to adjust the colorbar, default is True
+    :param cbar_label (str)(optional): the label of the colorbar, default is None
+    :param save_path (str)(optional): the path to save the figure, default is None
+    :return: None
+    """
+    if scale is not None:
+        scalebar = ScaleBar(scale, "um", length_fraction=0.13, location='lower right',
+                            box_color=None, color='white', frameon=False, width_fraction=0.02,
+                            font_properties={'size': 12, 'weight': 'bold', 'math_fontfamily': 'dejavusans'})
+    if cbar_adj:
+        hist, bins = np.histogram(data.flatten(), bins=500)
+        cum_counts = np.cumsum(hist)
+        tot_counts = np.sum(hist)
+        tot_counts_5 = tot_counts * 0.05
+        tot_counts_95 = tot_counts * 0.95
+        bin_edges = bins[np.where((cum_counts >= tot_counts_5) & (cum_counts <= tot_counts_95))]
+        vmin = bin_edges[0]
+        vmax = bin_edges[-1]
+    fig, ax = plt.subplots()
+    cmap = ax.imshow(data, vmin=vmin, vmax=vmax)
+    if scale is not None:
+        ax.add_artist(scalebar)
+        ax.set_axis_off()
+    fmt = matplotlib.ticker.ScalarFormatter(useMathText=True)
+    fmt.set_powerlimits((0, 0))
+    cbar = fig.colorbar(cmap, ax=ax, format=fmt)
+    if cbar_label is not None:
+        cbar.set_label(cbar_label)
+    if title is not None:
+        ax.set_title(title)
+    plt.tight_layout()
+    if save_path is not None:
+        plt.savefig(save_path, transparent=True, dpi=300)
+    plt.show()
 #%% Define gaussian fitting function for the triple Gaussian
 from scipy.optimize import curve_fit
 def gaussian(x, amp, cen, wid):
@@ -374,6 +415,8 @@ def plot_intint_gaussian(original_data,params,cbar_label='PL integrated intensit
                 if np.sum(spectrum) < sum_threshold:
                     intint_gaussian[i, j] = 0 # use the sum of the intensity to filter out the bad pixels or background
     # integrate a single Gaussian peak
+    if ROI is not None:
+        intint_gaussian = intint_gaussian[ROI[1]:ROI[1]+ROI[3], ROI[0]:ROI[0]+ROI[2]]
     # use histogram to avoid the bad pixel in order to get a better ratio map
     hist, bins = np.histogram(intint_gaussian.flatten(), bins=500)
     cum_counts = np.cumsum(hist)
@@ -385,18 +428,16 @@ def plot_intint_gaussian(original_data,params,cbar_label='PL integrated intensit
         vmin = bin_edges[0]
         vmax = bin_edges[-1]
     fig, ax = plt.subplots()
-    if ROI is not None:
-        intint_gaussian_ROI = intint_gaussian[ROI[1]:ROI[1]+ROI[3],ROI[0]:ROI[0]+ROI[2]]
-        cmap = ax.imshow(intint_gaussian_ROI, vmin=vmin, vmax=vmax)
-    else:
-        cmap = ax.imshow(intint_gaussian, vmin=vmin, vmax=vmax)
+    cmap = ax.imshow(intint_gaussian, vmin=vmin, vmax=vmax)
     ax.set_axis_off()
     scalebar = ScaleBar(original_data.axes_manager[0].scale, "um", length_fraction=0.13, location='lower right',
                         box_color=None, color='white', frameon=False, width_fraction=0.02, font_properties={'size': 12,
                                                                                                         'weight': 'bold',
                                                                                                         'math_fontfamily': 'dejavusans'})
     ax.add_artist(scalebar)
-    cbar = fig.colorbar(cmap, ax=ax)
+    fmt = matplotlib.ticker.ScalarFormatter(useMathText=True)
+    fmt.set_powerlimits((0, 0))
+    cbar = fig.colorbar(cmap, ax=ax, format=fmt)
     cbar.set_label(cbar_label)
     plt.tight_layout()
     if save_path is not None:
@@ -520,7 +561,9 @@ def point_marker(map_data,original_data, YX,cbarlabel='Intensity (counts)',save_
     colors = ['m', 'k', 'b', 'r', 'c', 'g']
     for i in range(len(YX)):
         ax.plot(YX[i][1], YX[i][0], 'o', mfc='none', mec=colors[i],mew=3, markersize=15)
-    cbar=fig.colorbar(cmap, ax=ax)
+    fmt = matplotlib.ticker.ScalarFormatter(useMathText=True)
+    fmt.set_powerlimits((0, 0))
+    cbar=fig.colorbar(cmap, ax=ax,format=fmt)
     cbar.set_label(cbarlabel, fontsize=12, labelpad=10)
     plt.tight_layout()
     if save_path is not None:
@@ -681,7 +724,8 @@ def plot_spectra(spc_list, wl_list, data_type, xlim=None,ylim=None,label_list=No
 #%% Find local maxima in the spectrum based on scipy.signal.find_peaks
 import scipy.signal as signal
 
-def find_maxima(original_data, spectrum_data, data_type, prominence=None,height=None,save_path=None):
+def find_maxima(original_data, spectrum_data, data_type, prominence=None,height=None,
+                major_locator=50,n_minor_locator=2,save_path=None):
     """
     Find the maxima in the average spectrum
     :param original_data (LumiSpectrum): the original data read by Hyperspy providing spectral information
@@ -709,12 +753,12 @@ def find_maxima(original_data, spectrum_data, data_type, prominence=None,height=
         secx = plt.gca().secondary_xaxis('top', functions=(lambda2energy, energy2lambda))
         secx.set_xlabel('Energy (eV)', fontsize=12, labelpad=10)
         secx.tick_params(which='both', direction='in', right=True, top=True)
-        plt.gca().xaxis.set_major_locator(MultipleLocator(50))
-        plt.gca().xaxis.set_minor_locator(AutoMinorLocator(2))
+        plt.gca().xaxis.set_major_locator(MultipleLocator(major_locator))
+        plt.gca().xaxis.set_minor_locator(AutoMinorLocator(n_minor_locator))
     elif data_type == 'Raman':
         x_label = 'Raman shift (cm$^{-1}$)'
-        plt.gca().xaxis.set_major_locator(MultipleLocator(500))
-        plt.gca().xaxis.set_minor_locator(AutoMinorLocator(5))
+        plt.gca().xaxis.set_major_locator(MultipleLocator(major_locator))
+        plt.gca().xaxis.set_minor_locator(AutoMinorLocator(n_minor_locator))
     plt.xlabel(x_label, fontsize=12, labelpad=10)
     plt.ylabel('{} intensity (counts)'.format(data_type), fontsize=12, labelpad=10)
     plt.tick_params(which='both', direction='in', right=True, top=True)
