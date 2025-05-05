@@ -6,7 +6,7 @@ import matplotlib.ticker
 from matplotlib.ticker import MultipleLocator, AutoMinorLocator
 
 #%% Get the explained variance ratio plot (scree plot)
-def plot_evr(dataPCA, n_components):
+def plot_evr(dataPCA, n_components,save_path=None):
     """
     Plot the explained variance ratio by PCA
     :param dataPCA (LumiSpectrum): hyperspectral data with PCA decomposition
@@ -24,10 +24,12 @@ def plot_evr(dataPCA, n_components):
     plt.gca().xaxis.set_major_locator(MultipleLocator(10))
     plt.gca().xaxis.set_minor_locator(AutoMinorLocator(5))
     plt.tight_layout()
+    if save_path is not None:
+        plt.savefig(save_path,transparent=True,dpi=300)
     plt.show()
 
 #%% Plot the PC spectra
-def PC_spc(dataPCA,component_index, data_type,save_path=None):
+def PC_spc(dataPCA,component_index, data_type,major_locator=50,n_minor_locator=2,save_path=None):
     """
     Plot the spectrum of the individual principal component
     :param dataPCA (LumiSpectrum): hyperspectral data with PCA decomposition
@@ -50,13 +52,13 @@ def PC_spc(dataPCA,component_index, data_type,save_path=None):
         secx=ax.secondary_xaxis('top', functions=(lambda2energy, energy2lambda))
         secx.set_xlabel('Energy (eV)', fontsize=12, labelpad=10)
         secx.tick_params(which='both', direction='in', right=True, top=True)
-        ax.xaxis.set_major_locator(MultipleLocator(50))
-        ax.xaxis.set_minor_locator(AutoMinorLocator(2))
+        ax.xaxis.set_major_locator(MultipleLocator(major_locator))
+        ax.xaxis.set_minor_locator(AutoMinorLocator(n_minor_locator))
     elif data_type == 'Raman':
         xlabel = 'Raman shift (cm$^{-1}$)'
         ylabel = 'Raman intensity (counts)'
-        ax.xaxis.set_major_locator(MultipleLocator(500))
-        ax.xaxis.set_minor_locator(AutoMinorLocator(5))
+        ax.xaxis.set_major_locator(MultipleLocator(major_locator))
+        ax.xaxis.set_minor_locator(AutoMinorLocator(n_minor_locator))
     ax.set_xlabel(xlabel, fontsize=12, labelpad=10)
     ax.set_ylabel(ylabel, fontsize=12, labelpad=10)
     ax.set_title('{} spectrum based on the {}. PC'.format(data_type,component_index+1)) # the index shown in the title is starting from 1
@@ -66,15 +68,18 @@ def PC_spc(dataPCA,component_index, data_type,save_path=None):
     plt.show()
 
 #%% Plot the loading map of the given PC
-def loading_map(dataPCA, component_index,save_path=None):
+def loading_map(dataPCA, component_index,ROI=None,save_path=None):
     '''
     Plot the loading map of the given PC
     :param dataPCA: the data after PCA decomposition
     :param component_index: the index of the principal component starting from 1
+    :param ROI(list): the region of interest to be shown in the loading map[y,y+dy,x,x+dx]
     :return:
     '''
     loading_maps = dataPCA.get_decomposition_loadings()
     loading_map = loading_maps.data[component_index-1,:,:]
+    if ROI is not None:
+        loading_map = loading_map[ROI[0]:ROI[1], ROI[2]:ROI[3]]
     hist, bins = np.histogram(loading_map.flatten(), bins=500)
     cum_counts = np.cumsum(hist)
     tot_counts = np.sum(hist)
@@ -91,12 +96,16 @@ def loading_map(dataPCA, component_index,save_path=None):
     ax.set_axis_off()
     ax.add_artist(scalebar)
     ax.set_title('Loading map of the {}. PC'.format(component_index))
-    cbar = fig.colorbar(cmap, ax=ax)
+    fmt = matplotlib.ticker.ScalarFormatter(useMathText=True)
+    fmt.set_powerlimits((0, 0))
+    cbar = fig.colorbar(cmap, ax=ax,format=fmt)
     cbar.set_label('Loading value')
     plt.tight_layout()
     if save_path is not None:
         plt.savefig(save_path,transparent=True,dpi=300)
     plt.show()
+
+    return loading_map
 #%% Reconstruct the data using given number of PCs or a certain PC
 def rec_data(dataPCA, num_PCs, single_PC=False):
     """
