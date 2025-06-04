@@ -2,11 +2,10 @@ import hyperspy.api as hs
 import numpy as np
 import matplotlib.pyplot as plt
 import ants
-from matplotlib_scalebar.scalebar import ScaleBar
 import matplotlib.ticker
 from matplotlib.ticker import MultipleLocator, AutoMinorLocator
 import os
-
+from mpl_toolkits.axes_grid1.anchored_artists import AnchoredSizeBar
 #%% extract the xml file paths
 def xml_paths(folder_path, endswith='.xml'):
     """
@@ -38,8 +37,45 @@ def remove_negative(data):
     """
     data.data[data.data < 0] = 0
     return data
+#%% get the ideal scalebar length
+def get_scalebar_length(data, pixel_to_mum, percent=0.133335):
+    """
+    Calculate the ideal scalebar length based on the data and pixel size. Best length of a scale bar. 13% of the length of the image.
+    :param data: an image data
+    :param pixel_to_mum: Pixel size in micrometers.
+    :param percent: the percentage of the image length to be used for the scalebar, default is 0.133335 (13%).
+    :return:
+    len_in_pix (float): the length of the scalebar in pixels
+    length (float): the length of the scalebar in micrometers
+    width (float): the width of the scalebar in pixels
+    """
+    ideal_length_scale_bar = data.shape[1] *pixel_to_mum * percent  # 13% of the image length in micrometers
+
+    # Work out how many pixels are required for the scalebar. If scale bar length is > 10 round to the nearest 5.
+    if ideal_length_scale_bar > 10:
+        n = (ideal_length_scale_bar - 10) / 5
+        n = round(n)
+        length = int(10 + 5 * n)
+        len_in_pix = length / pixel_to_mum
+
+    # Round to the nearest integer if between 1 and 10.
+    elif (ideal_length_scale_bar <= 10) & (ideal_length_scale_bar >= 1):
+        n = int(round(ideal_length_scale_bar))
+        length = n
+        len_in_pix = length / pixel_to_mum
+
+    # Round to 1 decimal place if < 1.
+    elif ideal_length_scale_bar < 1:
+        n = round(ideal_length_scale_bar, 1)
+        length = n
+        len_in_pix = n / pixel_to_mum
+
+    width = 0.06 * len_in_pix
+
+    return len_in_pix, length, width
 #%% Plot an integrated intensity map
 def intint_map(data, data_type, spectral_range=None, processed_data=None,
+               frac_scalebar=0.133335,
                savefig=False, figname=None, savefile=False, filename=None, savepath=None):
     """
     Plot an integrated intensity map over the given wavelength or wavenumber range
@@ -60,11 +96,8 @@ def intint_map(data, data_type, spectral_range=None, processed_data=None,
         intint = processed_data[:,:,index1:index2].sum(axis=2)
     else:
         intint = data.data[:,:,index1:index2].sum(axis=2)
-
-    scalebar = ScaleBar(data.axes_manager[0].scale, "um", length_fraction=0.13, location='lower right',
-                        box_color=None, color='white', frameon=False, width_fraction=0.02, font_properties={'size': 12,
-                                                                                                            'weight': 'bold',
-                                                                                                            'math_fontfamily': 'dejavusans'})
+    # Get the scalebar length
+    len_in_pix, length, width = get_scalebar_length(intint, data.axes_manager[0].scale, percent=frac_scalebar)
     # Use histogram to get a better contrast
     hist, bins = np.histogram(intint.flatten(), bins=500)
 
@@ -79,11 +112,14 @@ def intint_map(data, data_type, spectral_range=None, processed_data=None,
     fig,ax = plt.subplots()
     cmap = ax.imshow(intint, vmin=bin_edges[0],vmax=bin_edges[-1],cmap='viridis') # use the bin-edges as the limits for correcting the color scale
     ax.set_axis_off()
+    scalebar = AnchoredSizeBar(ax.transData, len_in_pix, str(length) + ' μm', 4, pad=1,
+                               borderpad=0.1, sep=5, frameon=False, size_vertical=width, color='white',
+                               fontproperties={'size': 15, 'weight': 'bold'})
+    ax.add_artist(scalebar)
     fmt = matplotlib.ticker.ScalarFormatter(useMathText=True)
     fmt.set_powerlimits((0, 0))
     cbar = fig.colorbar(cmap, ax=ax, format=fmt)
     cbar.set_label('{} integrated intensity (counts)'.format(data_type))
-    ax.add_artist(scalebar)
     plt.tight_layout()
     if savefig:
         if figname is None:
@@ -101,6 +137,7 @@ def intint_map(data, data_type, spectral_range=None, processed_data=None,
 
 #%%plot an intensity map(relative intensity map) at the given wavelength or wavenumber
 def int_map(original_data, wavelength,data_type,processed_data=None,
+            frac_scalebar=0.133335,
             savefig=False, figname=None, savefile=False, filename=None, savepath=None):
     """
     Plot an intensity map at the given wavelength or wavenumber
@@ -118,10 +155,8 @@ def int_map(original_data, wavelength,data_type,processed_data=None,
         int_map = processed_data[:,:,abs(Spectr-wavelength).argmin()]
     else:
         int_map = original_data.data[:,:,abs(Spectr-wavelength).argmin()]
-    scalebar = ScaleBar(original_data.axes_manager[0].scale, "um", length_fraction=0.13, location='lower right',
-                        box_color=None, color='white', frameon=False, width_fraction=0.02, font_properties={'size': 12,
-                                                                                                        'weight': 'bold',
-                                                                                                        'math_fontfamily': 'dejavusans'})
+    # Get the scalebar length
+    len_in_pix, length, width = get_scalebar_length(int_map, original_data.axes_manager[0].scale, percent=frac_scalebar)
     # Use histogram to avoid the bad pixel in order to get a better ratio map
     hist, bins = np.histogram(int_map.flatten(), bins=500)
 
@@ -135,6 +170,9 @@ def int_map(original_data, wavelength,data_type,processed_data=None,
     fig, ax = plt.subplots()
     cmap = ax.imshow(int_map,vmin=bin_edges[0], vmax=bin_edges[-1])
     ax.set_axis_off()
+    scalebar = AnchoredSizeBar(ax.transData, len_in_pix, str(length) + ' μm', 4, pad=1,
+                                 borderpad=0.1, sep=5, frameon=False, size_vertical=width, color='white',
+                                 fontproperties={'size': 15, 'weight': 'bold'})
     ax.add_artist(scalebar)
     if data_type == 'PL':
         cbarlabel = 'PL intensity (counts)'
@@ -261,7 +299,8 @@ def transform2map(fixed_data, moving_data, transform, interpolator='nearestNeigh
     warped_map = ants.apply_transforms(fixed=fixed, moving=moving, transformlist=transform['fwdtransforms'], interpolator=interpolator).numpy()
     return warped_map
 #%% Plot colormap
-def plot_colormap(data, scale=None, cbar_adj=True,cbar_label=None, title=None, save_path=None):
+def plot_colormap(data, scale=None, frac_scalebar=0.133335,
+                  cbar_adj=True,cbar_label=None, title=None, save_path=None):
     """
     Plot the colormap of the hyperspectral data
     :param data (np.ndarray): the hyperspectral data
@@ -271,10 +310,6 @@ def plot_colormap(data, scale=None, cbar_adj=True,cbar_label=None, title=None, s
     :param save_path (str)(optional): the path to save the figure, default is None
     :return: None
     """
-    if scale is not None:
-        scalebar = ScaleBar(scale, "um", length_fraction=0.13, location='lower right',
-                            box_color=None, color='white', frameon=False, width_fraction=0.02,
-                            font_properties={'size': 12, 'weight': 'bold', 'math_fontfamily': 'dejavusans'})
     if cbar_adj:
         hist, bins = np.histogram(data.flatten(), bins=500)
         cum_counts = np.cumsum(hist)
@@ -287,6 +322,10 @@ def plot_colormap(data, scale=None, cbar_adj=True,cbar_label=None, title=None, s
     fig, ax = plt.subplots()
     cmap = ax.imshow(data, vmin=vmin, vmax=vmax)
     if scale is not None:
+        len_in_pix, length, width = get_scalebar_length(data, scale, percent=frac_scalebar)
+        scalebar = AnchoredSizeBar(ax.transData, len_in_pix, str(length) + ' μm', 4, pad=1,
+                                   borderpad=0.1, sep=5, frameon=False, size_vertical=width,
+                                   color='white', fontproperties={'size': 15, 'weight': 'bold'})
         ax.add_artist(scalebar)
         ax.set_axis_off()
     fmt = matplotlib.ticker.ScalarFormatter(useMathText=True)
@@ -388,6 +427,7 @@ def plot_gaussian_fit(data, params, func_name='triple_gaussian', px_YX=(0,0), sa
 #%% Step2: Plot the integrated intensity map of the individual Gaussian peak over the entire spectral range
 from scipy import integrate
 def plot_intint_gaussian(original_data,params,cbar_label='PL integrated intensity (counts)',cbar_adj=True, ROI=None,
+                         frac_scalebar=0.133335,
                          sum_threshold=None,save_path=None):
     """
     Plot the integrated intensity maps of the individual Gaussian peaks over the entire spectral range
@@ -430,10 +470,11 @@ def plot_intint_gaussian(original_data,params,cbar_label='PL integrated intensit
     fig, ax = plt.subplots()
     cmap = ax.imshow(intint_gaussian, vmin=vmin, vmax=vmax)
     ax.set_axis_off()
-    scalebar = ScaleBar(original_data.axes_manager[0].scale, "um", length_fraction=0.13, location='lower right',
-                        box_color=None, color='white', frameon=False, width_fraction=0.02, font_properties={'size': 12,
-                                                                                                        'weight': 'bold',
-                                                                                                        'math_fontfamily': 'dejavusans'})
+    len_in_pix, length, width = get_scalebar_length(intint_gaussian, original_data.axes_manager[0].scale,
+                                                     percent=frac_scalebar)
+    scalebar = AnchoredSizeBar(ax.transData, len_in_pix, str(length) + ' μm', 4, pad=1,
+                               borderpad=0.1, sep=5, frameon=False, size_vertical=width, color='white',
+                               fontproperties={'size': 15, 'weight': 'bold'})
     ax.add_artist(scalebar)
     fmt = matplotlib.ticker.ScalarFormatter(useMathText=True)
     fmt.set_powerlimits((0, 0))
@@ -447,7 +488,8 @@ def plot_intint_gaussian(original_data,params,cbar_label='PL integrated intensit
     return intint_gaussian
 #%% Plot the centre of mass map
 # Calculate and plot the COM of the PL spectrum for all pixels using vectorized operations
-def plot_com_map(original_data, processed_data=None, lambda1=None, lambda2=None, params_ROI=None,data_type='PL',save_path=None):
+def plot_com_map(original_data, processed_data=None, lambda1=None, lambda2=None, params_ROI=None,data_type='PL',
+                 frac_scalebar=0.133335,save_path=None):
     """
     Plot the centre of mass (COM) map of the PL spectrum for all pixels
     :param original_data (LumiSpectrum): the original/reconstructed hyperspectral data
@@ -503,10 +545,11 @@ def plot_com_map(original_data, processed_data=None, lambda1=None, lambda2=None,
     else:
         cmap = ax.imshow(com_map,vmin=bin_edges[0], vmax=bin_edges[-1])
     ax.set_axis_off()
-    scalebar = ScaleBar(original_data.axes_manager[0].scale, "um", length_fraction=0.13, location='lower right',
-                        box_color=None, color='white', frameon=False, width_fraction=0.02, font_properties={'size': 12,
-                                                                                                        'weight': 'bold',
-                                                                                                        'math_fontfamily': 'dejavusans'})
+    len_in_pix, length, width = get_scalebar_length(com_map, original_data.axes_manager[0].scale,
+                                                     percent=frac_scalebar)
+    scalebar = AnchoredSizeBar(ax.transData, len_in_pix, str(length) + ' μm', 4, pad=1,
+                               borderpad=0.1, sep=5, frameon=False, size_vertical=width, color='white',
+                               fontproperties={'size': 15, 'weight': 'bold'})
     ax.add_artist(scalebar)
     cbar = fig.colorbar(cmap, ax=ax, format='%.1f')
     cbar.set_label(cbarlabel)
@@ -532,7 +575,7 @@ def coord_extract(map_data, value='max'):
     return coord
 
 #%% Mark points of interest on the map
-def point_marker(map_data,original_data, YX,cbarlabel='Intensity (counts)',save_path=None):
+def point_marker(map_data,original_data, YX,cbarlabel='Intensity (counts)',frac_scalebar=0.133335,save_path=None):
     """
     Mark the points of interest on the map
     :param map_data (np.ndarray): the dataset of map
@@ -550,13 +593,14 @@ def point_marker(map_data,original_data, YX,cbarlabel='Intensity (counts)',save_
     tot_counts_95 = tot_counts * 0.95
     bin_edges = bins[np.where((cum_counts >= tot_counts_5) & (cum_counts <= tot_counts_95))]
     # define scalebar
-    scalebar = ScaleBar(original_data.axes_manager[0].scale, "um", length_fraction=0.13, location='lower right',
-                        box_color=None, color='white', frameon=False, width_fraction=0.02, font_properties={'size': 12,
-                                                                                                        'weight': 'bold',
-                                                                                                        'math_fontfamily': 'dejavusans'})
+    len_in_pix, length, width = get_scalebar_length(map_data, original_data.axes_manager[0].scale,
+                                                     percent=frac_scalebar)
     fig,ax = plt.subplots()
     cmap=ax.imshow(map_data,vmin=bin_edges[0], vmax=bin_edges[-1])
     ax.set_axis_off()
+    scalebar = AnchoredSizeBar(ax.transData, len_in_pix, str(length) + ' μm', 4, pad=1,
+                               borderpad=0.1, sep=5, frameon=False, size_vertical=width, color='white',
+                               fontproperties={'size': 15, 'weight': 'bold'})
     ax.add_artist(scalebar)
     colors = ['m', 'k', 'b', 'r', 'c', 'g']
     for i in range(len(YX)):
@@ -854,7 +898,7 @@ def plot_2d_hist(data_list, bins=50,labels=['PL intensity (counts)','Raman inten
         plt.savefig(save_path, transparent=True, dpi=300)
     plt.show()
 #%% Plot the grayscale white light reflection image
-def plot_img(img_data,ROI=None,adj_hist=False,save_path=None):
+def plot_img(img_data,ROI=None,adj_hist=False,frac_scalebar=0.133335,save_path=None):
     '''
     Plot the grayscale image
     :param img_data (DataFrame): the image data read from the txt file using pandas
@@ -865,10 +909,7 @@ def plot_img(img_data,ROI=None,adj_hist=False,save_path=None):
     '''
     pixel_size_x = (img_data.axes[1].astype(float).max()-img_data.axes[1].astype(float).min())/img_data.axes[1].size
     pixel_size_y = (img_data.axes[0].astype(float).max()-img_data.axes[0].astype(float).min())/img_data.axes[0].size
-    scalebar = ScaleBar(pixel_size_x,"um", length_fraction=0.13, location='lower right',
-                        box_color=None, color='white', frameon=False, width_fraction=0.02, font_properties={'size': 12,
-                                                                                                            'weight': 'bold',
-                                                                                                            'math_fontfamily': 'dejavusans'})
+    len_in_pix, length, width = get_scalebar_length(img_data.values, pixel_size_x, percent=frac_scalebar)
     fig, ax = plt.subplots()
     if ROI is not None:
         y_low_idx = np.argmin(np.abs(img_data.axes[0].astype(float)-ROI[0]))
@@ -889,6 +930,9 @@ def plot_img(img_data,ROI=None,adj_hist=False,save_path=None):
     else:
         ax.imshow(img_output, cmap='gray')
     ax.set_axis_off()
+    scalebar = AnchoredSizeBar(ax.transData, len_in_pix, str(length) + ' μm', 4, pad=1,
+                               borderpad=0.1, sep=5, frameon=False, size_vertical=width, color='white',
+                               fontproperties={'size': 15, 'weight': 'bold'})
     ax.add_artist(scalebar)
     plt.tight_layout()
     if save_path is not None:
