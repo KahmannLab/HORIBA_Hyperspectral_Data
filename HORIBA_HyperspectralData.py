@@ -37,6 +37,32 @@ def remove_negative(data):
     """
     data.data[data.data < 0] = 0
     return data
+#%% visualize the hyperspectral data
+def visual_data(data, xlabel='Wavelength / nm', ylabel='PL intensity / a.u.', savefig=False, figname=None, savepath=None):
+    """
+    Plot all spectra of hyperspectral data in a single plot
+    :param data (np.ndarray): the 2D dataset
+    :param xlabel (str): the label of the x-axis
+    :param ylabel (str): the label of the y-axis
+    :param savefig (bool): whether to save the figure
+    :param figname (str): the name of the figure
+    :param savepath (str): the path to save the figure
+    :return:
+    """
+    fig, ax = plt.subplots(figsize=(10, 6))
+    for i in range(data.data.shape[0]):
+        for j in range(data.data.shape[1]):
+            ax.plot(data.axes_manager[2].axis, data.data[i, j, :])
+    ax.set_xlabel(xlabel, fontsize=12)
+    ax.set_ylabel(ylabel, fontsize=12)
+    ax.tick_params(which='both', direction='in', right=True, top=True)
+    plt.tight_layout()
+    if savefig:
+        if figname is None:
+            print('Please provide a figure name')
+        else:
+            plt.savefig(savepath+figname+'.png', transparent=True, dpi=300)
+    plt.show()
 #%% get the ideal scalebar length
 def get_scalebar_length(data, pixel_to_mum, percent=0.133335):
     """
