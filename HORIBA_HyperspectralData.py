@@ -145,7 +145,7 @@ def intint_map(data, data_type, spectral_range=None, processed_data=None,
     fmt = matplotlib.ticker.ScalarFormatter(useMathText=True)
     fmt.set_powerlimits((0, 0))
     cbar = fig.colorbar(cmap, ax=ax, format=fmt)
-    cbar.set_label('{} integrated intensity (counts)'.format(data_type))
+    cbar.set_label('{} integrated intensity / a.u.'.format(data_type))
     plt.tight_layout()
     if savefig:
         if figname is None:
@@ -201,9 +201,9 @@ def int_map(original_data, wavelength,data_type,processed_data=None,
                                  fontproperties={'size': 15, 'weight': 'bold'})
     ax.add_artist(scalebar)
     if data_type == 'PL':
-        cbarlabel = 'PL intensity (counts)'
+        cbarlabel = 'PL intensity / a.u.'
     elif data_type == 'Raman':
-        cbarlabel = 'Raman intensity (counts)'
+        cbarlabel = 'Raman intensity / a.u.'
     elif data_type == 'PLRatio':
         cbarlabel = 'Normalized PL intensity'
     elif data_type == 'RamanRatio':
@@ -437,9 +437,9 @@ def plot_gaussian_fit(data, params, func_name='triple_gaussian', px_YX=(0,0), sa
         ax[0].plot(wavelengths, fit, label='Fit',color='r')
         residuals = spectrum - fit
     ax[1].scatter(wavelengths, residuals, label='Residuals')
-    ax[0].set_xlabel('Wavelength (nm)',fontsize=12,labelpad=10)
-    ax[0].set_ylabel('PL intensity (counts)',fontsize=12,labelpad=10)
-    ax[1].set_xlabel('Wavelength (nm)',fontsize=12,labelpad=10)
+    ax[0].set_xlabel('Wavelength / nm',fontsize=12,labelpad=10)
+    ax[0].set_ylabel('PL intensity / a.u.',fontsize=12,labelpad=10)
+    ax[1].set_xlabel('Wavelength / nm',fontsize=12,labelpad=10)
     ax[1].set_ylabel('Data - Fit',fontsize=12,labelpad=10)
     ax[0].tick_params(which='both', direction='in', right=True, top=True)
     ax[1].tick_params(which='both', direction='in', right=True, top=True)
@@ -452,7 +452,7 @@ def plot_gaussian_fit(data, params, func_name='triple_gaussian', px_YX=(0,0), sa
     return None
 #%% Step2: Plot the integrated intensity map of the individual Gaussian peak over the entire spectral range
 from scipy import integrate
-def plot_intint_gaussian(original_data,params,cbar_label='PL integrated intensity (counts)',cbar_adj=True, ROI=None,
+def plot_intint_gaussian(original_data,params,cbar_label='PL integrated intensity / a.u.',cbar_adj=True, ROI=None,
                          frac_scalebar=0.133335,
                          sum_threshold=None,save_path=None):
     """
@@ -546,9 +546,9 @@ def plot_com_map(original_data, processed_data=None, lambda1=None, lambda2=None,
     if data_type == 'PL':
         #convert wavelength to energy
         #com_map = 1239.8 / com_map
-        cbarlabel = 'PL center of mass energy (nm)'
+        cbarlabel = 'PL center of mass energy / nm'
     elif data_type == 'Raman':
-        cbarlabel = 'Raman center of mass energy (cm$^{-1}$)'
+        cbarlabel = 'Raman center of mass energy / cm$^{-1}$'
     # check if the is NaN and replace it with zero
     com_map = np.nan_to_num(com_map)
     # adjust the color scale using the histogram
@@ -601,7 +601,7 @@ def coord_extract(map_data, value='max'):
     return coord
 
 #%% Mark points of interest on the map
-def point_marker(map_data,original_data, YX,cbarlabel='Intensity (counts)',frac_scalebar=0.133335,save_path=None):
+def point_marker(map_data,original_data, YX,cbarlabel='Intensity / a.u.',frac_scalebar=0.133335,save_path=None):
     """
     Mark the points of interest on the map
     :param map_data (np.ndarray): the dataset of map
@@ -671,15 +671,15 @@ def Spectrum_extracted(original_data, YX, data_type,major_locator=50,n_minor_loc
             intensity = original_data.data[y, x, :]
         ax.plot(Spectr, intensity, color=colors[i], label=spc_labels[i])
     if data_type == 'PL':
-        ax.set_xlabel('Wavelength (nm)', fontsize=12, labelpad=10)
+        ax.set_xlabel('Wavelength / nm', fontsize=12, labelpad=10)
         secx = ax.secondary_xaxis('top', functions=(lambda Spectr: 1239.8 / Spectr, lambda Spectr: 1239.8 / Spectr))
-        secx.set_xlabel('Energy (eV)', fontsize=12, labelpad=10)
+        secx.set_xlabel('Energy / eV', fontsize=12, labelpad=10)
         secx.tick_params(which='both', direction='in', right=True, top=True)
         plt.gca().xaxis.set_major_locator(MultipleLocator(major_locator))
         plt.gca().xaxis.set_minor_locator(AutoMinorLocator(n_minor_locator))
         plt.tick_params(which='both', direction='in', right=True, top=False)
     elif data_type == 'Raman':
-        ax.set_xlabel('Raman shift (cm$^{-1}$)', fontsize=12, labelpad=10)
+        ax.set_xlabel('Raman shift / cm$^{-1}$', fontsize=12, labelpad=10)
         ax.tick_params(which='both', direction='in', right=True, top=True)
         plt.gca().xaxis.set_major_locator(MultipleLocator(major_locator))
         plt.gca().xaxis.set_minor_locator(AutoMinorLocator(n_minor_locator))
@@ -688,7 +688,7 @@ def Spectrum_extracted(original_data, YX, data_type,major_locator=50,n_minor_loc
         ax.set_xlim(x_lim)
     if y_lim is not None:
         ax.set_ylim(y_lim)
-    ax.set_ylabel('{} intensity (counts)'.format(data_type), fontsize=12, labelpad=10)
+    ax.set_ylabel('{} intensity / a.u.'.format(data_type), fontsize=12, labelpad=10)
     ax.legend()
     plt.tight_layout()
     if save_path is not None:
@@ -719,23 +719,23 @@ def avg_spectrum(data, data_type,major_locator=50,n_minor_locator=2,params_ROI=N
     fig, ax = plt.subplots()
     ax.plot(Spectr, avg_intens)
     if data_type == 'PL':
-        x_label = 'Wavelength (nm)'
+        x_label = 'Wavelength / nm'
         def lambda2energy(Spectr):
             return 1239.8 / Spectr
 
         def energy2lambda(Spectr):
             return 1239.8 / Spectr
         secx=ax.secondary_xaxis('top', functions=(lambda2energy, energy2lambda))
-        secx.set_xlabel('Energy (eV)', fontsize=12, labelpad=10)
+        secx.set_xlabel('Energy / eV', fontsize=12, labelpad=10)
         secx.tick_params(which='both', direction='in', right=True, top=True)
         ax.xaxis.set_major_locator(MultipleLocator(major_locator))
         ax.xaxis.set_minor_locator(AutoMinorLocator(n_minor_locator))
     elif data_type == 'Raman':
-        x_label = 'Raman shift (cm$^{-1}$)'
+        x_label = 'Raman shift / cm$^{-1}$'
         ax.xaxis.set_major_locator(MultipleLocator(major_locator))
         ax.xaxis.set_minor_locator(AutoMinorLocator(n_minor_locator))
     ax.set_xlabel(x_label, fontsize=12, labelpad=10)
-    ax.set_ylabel('{} intensity (counts)'.format(data_type), fontsize=12, labelpad=10)
+    ax.set_ylabel('{} intensity / a.u.'.format(data_type), fontsize=12, labelpad=10)
     ax.tick_params(which='both', direction='in', right=True, top=False)
     plt.tight_layout()
     if savefig:
@@ -775,7 +775,7 @@ def plot_spectra(spc_list, wl_list, data_type, xlim=None,ylim=None,label_list=No
         else:
             ax.plot(wl_list[i], spc_list[i])
     if data_type == 'PL':
-        x_label = 'Wavelength (nm)'
+        x_label = 'Wavelength / nm'
         if secondary_axis:
             def lambda2energy(Spectr):
                 return 1239.8 / Spectr
@@ -783,12 +783,12 @@ def plot_spectra(spc_list, wl_list, data_type, xlim=None,ylim=None,label_list=No
             def energy2lambda(Spectr):
                 return 1239.8 / Spectr
             secx = ax.secondary_xaxis('top', functions=(lambda2energy, energy2lambda))
-            secx.set_xlabel('Energy (eV)', fontsize=12, labelpad=10)
+            secx.set_xlabel('Energy / eV', fontsize=12, labelpad=10)
             secx.tick_params(which='both', direction='in', right=True, top=True)
     elif data_type == 'Raman':
-        x_label = 'Raman shift (cm$^{-1}$)'
+        x_label = 'Raman shift / cm$^{-1}$'
     ax.set_xlabel(x_label, fontsize=12, labelpad=10)
-    ax.set_ylabel('{} intensity (counts)'.format(data_type), fontsize=12, labelpad=10)
+    ax.set_ylabel('{} intensity / a.u.'.format(data_type), fontsize=12, labelpad=10)
     ax.tick_params(which='both', direction='in', right=True, top=True)
     ax.xaxis.set_major_locator(MultipleLocator(major_locator))
     ax.xaxis.set_minor_locator(AutoMinorLocator(n_minor_locator))
@@ -825,23 +825,23 @@ def find_maxima(original_data, spectrum_data, data_type, prominence=None,height=
     for p in range(len(pps)):
         plt.text(pps[p], pint[p]+2, np.round(pps[p]), fontsize=10, rotation='vertical', va='bottom', ha='center')
     if data_type == 'PL':
-        x_label = 'Wavelength (nm)'
+        x_label = 'Wavelength / nm'
         def lambda2energy(Spectr):
             return 1239.8 / Spectr
 
         def energy2lambda(Spectr):
             return 1239.8 / Spectr
         secx = plt.gca().secondary_xaxis('top', functions=(lambda2energy, energy2lambda))
-        secx.set_xlabel('Energy (eV)', fontsize=12, labelpad=10)
+        secx.set_xlabel('Energy / eV', fontsize=12, labelpad=10)
         secx.tick_params(which='both', direction='in', right=True, top=True)
         plt.gca().xaxis.set_major_locator(MultipleLocator(major_locator))
         plt.gca().xaxis.set_minor_locator(AutoMinorLocator(n_minor_locator))
     elif data_type == 'Raman':
-        x_label = 'Raman shift (cm$^{-1}$)'
+        x_label = 'Raman shift / cm$^{-1}$'
         plt.gca().xaxis.set_major_locator(MultipleLocator(major_locator))
         plt.gca().xaxis.set_minor_locator(AutoMinorLocator(n_minor_locator))
     plt.xlabel(x_label, fontsize=12, labelpad=10)
-    plt.ylabel('{} intensity (counts)'.format(data_type), fontsize=12, labelpad=10)
+    plt.ylabel('{} intensity / a.u.'.format(data_type), fontsize=12, labelpad=10)
     plt.tick_params(which='both', direction='in', right=True, top=True)
     plt.tight_layout()
     if save_path is not None:
@@ -851,7 +851,7 @@ def find_maxima(original_data, spectrum_data, data_type, prominence=None,height=
 
 #%% Plot histogram(s) of the 2d map data
 import scipy.stats as stats
-def plot_hist(dataMap, labels=None, spread=True, bins=100, bins_range=None, x_label='Intensity (counts)', save_path=None):
+def plot_hist(dataMap, labels=None, spread=True, bins=100, bins_range=None, x_label='Intensity / a.u.', save_path=None):
     """
     Plot histogram(s) of the 2D map data
     :param dataMap (np.ndarray or list): the 2D map data or a list of 2D map data
@@ -902,7 +902,7 @@ def plot_hist(dataMap, labels=None, spread=True, bins=100, bins_range=None, x_la
         plt.savefig(save_path,transparent=True,dpi=300)
     plt.show()
 #%% Plot 2D histogram of the correlative data
-def plot_2d_hist(data_list, bins=50,labels=['PL intensity (counts)','Raman intensity (counts)'],save_path=None):
+def plot_2d_hist(data_list, bins=50,labels=['PL intensity / a.u.','Raman intensity / a.u.'],save_path=None):
     '''
     Plot 2D histogram of the intensity maps
     :param data_list (list): the list of 2 datasets, for example, the PL and Raman intensity maps
