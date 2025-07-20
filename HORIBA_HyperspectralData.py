@@ -38,7 +38,7 @@ def remove_negative(data):
     data.data[data.data < 0] = 0
     return data
 #%% Load the hyperspectral data in an .xml file exported(or saved) from LabSpec(HORIBA) software
-def load_xml(file_path,remove_spikes=False,threshold='auto', remove_negatives=False):
+def load_xml(file_path,remove_spikes=False,threshold='auto', remove_negatives=False,plot=False):
     '''
     Load the hyperspectral data in an .xml file
     :param file_path (str): the path of the hyperspectral data file
@@ -52,6 +52,18 @@ def load_xml(file_path,remove_spikes=False,threshold='auto', remove_negatives=Fa
         data.spikes_removal_tool(threshold=threshold,interactive=False)
     if remove_negatives:
         data = remove_negative(data)
+    if plot:
+        # check if the filename contains PL or Raman
+        if 'PL' in os.path.basename(file_path):
+            xlabel = 'Wavelength / nm'
+            ylabel = 'PL intensity / a.u.'
+        elif 'Raman' in os.path.basename(file_path):
+            xlabel = 'Raman shift / cm$^{-1}$'
+            ylabel = 'Raman intensity / a.u.'
+        else:
+            xlabel = 'Wavelength / nm'
+            ylabel = 'Intensity / a.u.'
+        visual_data(data, xlabel=xlabel, ylabel=ylabel)
     return data
 #%% TODO: write data to an .hdf5 file
 #%% visualize the hyperspectral data
@@ -261,6 +273,8 @@ def plot_maps(data,spectral_range=None,processed_data=None,data_type='PL',frac_s
         else:
             plt.savefig(savepath+figname+'.png', transparent=True, dpi=300)
     plt.show()
+
+    return intint, maxint, com
 
 #%% Plot an integrated intensity map
 def intint_map(data, data_type, spectral_range=None, processed_data=None,
