@@ -65,7 +65,16 @@ def load_xml(file_path,remove_spikes=False,threshold='auto', remove_negatives=Fa
             ylabel = 'Intensity / a.u.'
         visual_data(data, xlabel=xlabel, ylabel=ylabel)
     return data
-#%% TODO: write data to an .hdf5 file
+#%% TODO: write hyperspectral data to an .hdf5 file
+def write_hdf5(data,filename,output_path):
+
+    """
+    Write the hyperspectral data to an .hdf5 file
+    :param data (LumiSpectrum): the hyperspectral data
+    :param filename (str): the name of the output file
+    :param output_path (str): the path to save the output file
+    :return: None
+    """
 #%% visualize the hyperspectral data
 def visual_data(data, xlabel='Wavelength / nm', ylabel='PL intensity / a.u.', savefig=False, figname=None, savepath=None):
     """
