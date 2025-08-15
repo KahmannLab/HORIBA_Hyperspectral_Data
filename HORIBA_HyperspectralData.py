@@ -286,9 +286,10 @@ def plot_maps(data,spectral_range=None,processed_data=None,data_type='PL',frac_s
     return intint, maxint, com
 
 #%% Plot an integrated intensity map
-def intint_map(data, data_type, spectral_range=None, processed_data=None,
+def intint_map(data, data_type,
                frac_scalebar=0.133335,
-               savefig=False, figname=None, savefile=False, filename=None, savepath=None):
+               savefig=False, figname=None, savefile=False, filename=None, savepath=None,
+               *args, **kwargs):
     """
     Plot an integrated intensity map over the given wavelength or wavenumber range
     :param data (LumiSpectrum): hyperspectral data
@@ -297,7 +298,7 @@ def intint_map(data, data_type, spectral_range=None, processed_data=None,
     :param processed_data (np.ndarray)(optional): the registered data
     :return: intint (np.ndarray): the integrated intensity map
     """
-    intint = get_intint(data, spectral_range=spectral_range, processed_data=processed_data)
+    intint = get_intint(data, *args, **kwargs)
     '''
     Spectr = data.axes_manager[2].axis
     if spectral_range is not None:
@@ -351,9 +352,10 @@ def intint_map(data, data_type, spectral_range=None, processed_data=None,
     return intint
 
 #%%plot an intensity map(relative intensity map) at the given wavelength or wavenumber
-def int_map(original_data, wavelength,data_type,processed_data=None,
+def int_map(original_data, wavelength, data_type,
             frac_scalebar=0.133335,
-            savefig=False, figname=None, savefile=False, filename=None, savepath=None):
+            savefig=False, figname=None, savefile=False, filename=None, savepath=None,
+            *args, **kwargs):
     """
     Plot an intensity map at the given wavelength or wavenumber
     :param original_data (LumiSpectrum): original/only-reconstructed hyperspectral data,
@@ -372,7 +374,7 @@ def int_map(original_data, wavelength,data_type,processed_data=None,
     else:
         int_map = original_data.data[:,:,abs(Spectr-wavelength).argmin()]
     '''
-    int_map = get_int(original_data, wavelength, processed_data=processed_data)
+    int_map = get_int(original_data, wavelength, *args, **kwargs)
     # Get the scalebar length
     len_in_pix, length, width = get_scalebar_length(int_map, original_data.axes_manager[0].scale, percent=frac_scalebar)
     # Use histogram to avoid the bad pixel in order to get a better ratio map
@@ -565,6 +567,24 @@ def triple_gaussian(x, amp1, cen1, wid1, amp2, cen2, wid2, amp3, cen3, wid3):
     return (amp1 * np.exp(-(x - cen1)**2 / (2 * wid1**2)) +
             amp2 * np.exp(-(x - cen2)**2 / (2 * wid2**2)) +
             amp3 * np.exp(-(x - cen3)**2 / (2 * wid3**2)))
+#%% Jacobian conversion for the hyperspectral data
+def jacobian_conversion(hsdata):
+    """
+    Convert the wavelength axis of the hyperspectral data to energy axis, and also convert the intensity using the Jacobian conversion
+    Note that h*c is ignored in the conversion, so the intensity is not in absolute units.
+    :param data (LumiSpectrum): the hyperspectral data
+    :return: data3d (np.ndarray): the hyperspectral data with the energy axis and converted intensity
+             energy_axis (np.ndarray): the energy axis of the hyperspectral data
+    """
+    wl = hsdata.axes_manager[2].axis
+    # Convert the wavelength axis to energy axis
+    h = 6.62607015e-34  # Planck constant in J.s
+    c = 3.0e8  # Speed of light in m/s
+    eV = 1.602176634e-19  # 1 eV in J
+    energy_axis = h * c / (wl * 1e-9) / eV
+    # Convert the intensity using the Jacobian conversion
+
+
 #%% tripple gaussian fitting to extract parameters and errors
 def gaussian_fit(data, func_name='triple_gaussian',initial_guesses=None,bounds=(-np.inf,np.inf)):
     """
@@ -1001,8 +1021,9 @@ def plot_spectra(spc_list, wl_list, data_type, xlim=None,ylim=None,label_list=No
 #%% Find local maxima in the spectrum based on scipy.signal.find_peaks
 import scipy.signal as signal
 
-def find_maxima(original_data, spectrum_data, data_type, prominence=None,height=None,
-                major_locator=50,n_minor_locator=2,save_path=None):
+def find_maxima(original_data, spectrum_data, data_type,
+                major_locator=50,n_minor_locator=2,save_path=None,
+                *args, **kwargs):
     """
     Find the maxima in the average spectrum
     :param original_data (LumiSpectrum): the original data read by Hyperspy providing spectral information
@@ -1013,7 +1034,7 @@ def find_maxima(original_data, spectrum_data, data_type, prominence=None,height=
     :param save_path (str)(optional): the path to save the figure
     :return: peaks (np.ndarray): the indices of the maxima in the spectrum
     """
-    peaks, _ = signal.find_peaks(spectrum_data, prominence=prominence,height=height)
+    peaks, _ = signal.find_peaks(spectrum_data, *args, **kwargs)
     pps = np.array(original_data.axes_manager[2].axis[peaks])  # peak positions
     pint = np.array(spectrum_data[peaks])  # peak intensity
     plt.plot(original_data.axes_manager[2].axis, spectrum_data)
