@@ -28,7 +28,7 @@ def unstack_spectra_columnwise(flat, ny, nx):
 #%%
 from sklearn.decomposition import PCA
 
-def sklearn_PCA(data,ScreePlot=False,n_components=None,*args, **kwargs):
+def sklearn_PCA(data,ScreePlot=False,n_PCs=None,*args, **kwargs):
     # flatten the datacube read by hyperspy
     flat_data = stack_spectra_columnwise(data.data)
     # apply PCA
@@ -40,9 +40,9 @@ def sklearn_PCA(data,ScreePlot=False,n_components=None,*args, **kwargs):
         # plot the explained variance ratio vs the number of components
         EVR = pca.explained_variance_ratio_
         N_components = np.arange(1, len(EVR) + 1)
-        if n_components is not None:
-            N_components = N_components[:n_components]
-            EVR = EVR[:n_components]
+        if n_PCs is not None:
+            N_components = N_components[:n_PCs]
+            EVR = EVR[:n_PCs]
         plt.plot(N_components, EVR, 'ro', markersize=5)
         ''''
         # using majorlocator and minor locator to set the x-axis ticks
