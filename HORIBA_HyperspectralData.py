@@ -927,12 +927,21 @@ def plot_spectra(spc_list, wl_list, data_type, xlim=None,ylim=None,label_list=No
     :param save_path (str)(optional): the path to save the figure
     :return:
     """
+    x_range = []
+    if xlim:
+        for wl in wl_list:
+            x1 = np.argmin(np.abs(wl - xlim[0]))
+            x2 = np.argmin(np.abs(wl - xlim[1]))
+            x_range.append([x1, x2])
+    else:
+        for wl in wl_list:
+            x_range.append([0, len(wl)-1])
     fig, ax = plt.subplots()
     for i in range(len(spc_list)):
         if label_list is not None:
-            ax.plot(wl_list[i], spc_list[i], label=label_list[i])
+            ax.plot(wl_list[i][x_range[i][0]:x_range[i][1]], spc_list[i][x_range[i][0]:x_range[i][1]], label=label_list[i])
         else:
-            ax.plot(wl_list[i], spc_list[i])
+            ax.plot(wl_list[i][x_range[i][0]:x_range[i][1]], spc_list[i][x_range[i][0]:x_range[i][1]])
     if data_type == 'PL':
         x_label = 'Wavelength / nm'
         if secondary_axis:
