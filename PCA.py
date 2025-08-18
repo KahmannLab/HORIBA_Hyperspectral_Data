@@ -50,15 +50,60 @@ def sklearn_PCA(data,ScreePlot=False,n_components=None,*args, **kwargs):
         plt.gca().xaxis.set_minor_locator(AutoMinorLocator(1))
         '''
         plt.xticks(N_components, fontsize=10)
-        plt.yticks(fontsize=10)
+        # plt.yticks(fontsize=10)
         plt.xlabel('Number of components')
         plt.ylabel('Explained variance ratio')
+        plt.yscale('log')
         plt.title('Explained variance ratio by PCA')
         plt.tight_layout()
         plt.show()
 
     return pca, component_spectra
+#%% plot the PCA component spectra
+def plot_PCs(component_spectra, component_idx=6,
+             x_label='Raman shift / cm$^{-1}$', y_label='Intensity / a.u.',
+             savefig=False, figname=None, savepath=None):
+    """
+    Plot the PCA component spectra.
 
+    Parameters:
+        component_spectra : array-like, shape (n_components, n_features)
+            The PCA component spectra.
+        component_idx : int or list of int, optional
+            If int, the first n components will be plotted.
+            If list, specific components will be plotted.
+
+    Returns:
+        None
+    """
+    if isinstance(component_idx, int):
+        # Plot the first n components
+        indices = list(range(component_idx))
+    elif isinstance(component_idx, list):
+        # Plot specific components
+        indices = component_idx
+    else:
+        raise ValueError("component_idx must be an int or a list of ints.")
+    for idx in indices:
+        fig, ax = plt.subplots()
+        ax.plot(component_spectra[idx], label=f'PC {idx + 1}')
+        ax.set_xlabel(x_label)
+        ax.set_ylabel(y_label)
+        ax.legend()
+        plt.tight_layout()
+        if savefig:
+            if figname is None:
+                print(f"Warning: No figure name provided, using default 'PC{idx+1}'.")
+                figname = f'PC{idx+1}'
+            else:
+                figname = figname+f'_PC{idx+1}'
+            if savepath is not None:
+                plt.savefig(savepath+figname+'.png', transparent=True, dpi=300)
+            else:
+                plt.savefig(figname+'.png', transparent=True, dpi=300)
+                print("Warning: No save path provided, saving in the current directory.")
+
+        plt.show()
 #%% reconstruct the data
 def reconstruct_data(data, pca, component_idx=None, component_list=None):
     """
