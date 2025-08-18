@@ -1,7 +1,6 @@
 import hyperspy.api as hs
 import numpy as np
 import matplotlib.pyplot as plt
-import ants
 import matplotlib.ticker
 from matplotlib.ticker import MultipleLocator, AutoMinorLocator
 import os
@@ -65,16 +64,6 @@ def load_xml(file_path,remove_spikes=False,threshold='auto', remove_negatives=Fa
             ylabel = 'Intensity / a.u.'
         visual_data(data, xlabel=xlabel, ylabel=ylabel)
     return data
-#%% TODO: write hyperspectral data to an .hdf5 file
-def write_hdf5(data,filename,output_path):
-
-    """
-    Write the hyperspectral data to an .hdf5 file
-    :param data (LumiSpectrum): the hyperspectral data
-    :param filename (str): the name of the output file
-    :param output_path (str): the path to save the output file
-    :return: None
-    """
 #%% visualize the hyperspectral data
 def visual_data(data, xlabel='Wavelength / nm', ylabel='PL intensity / a.u.', savefig=False, figname=None, savepath=None):
     """
@@ -218,8 +207,10 @@ def get_scalebar_length(data, pixel_to_mum, percent=0.133335):
     return len_in_pix, length, width
 #%% Plot a combination of integrated intensity map, maximum intensity map, and COM map.
 from skimage import exposure
-def plot_maps(data,spectral_range=None,processed_data=None,data_type='PL',frac_scalebar=0.133335,
-              savefig=False, figname=None, savepath=None):
+def plot_maps(data,spectral_range=None,data_type='PL',frac_scalebar=0.133335,
+              percentile_range=(5, 95),
+              savefig=False, figname=None, savepath=None,
+              **kwargs):
     """
     Plot a combination of integrated intensity map, maximum intensity map, and COM map.
     :param data (LumiSpectrum): hyperspectral data
@@ -232,19 +223,27 @@ def plot_maps(data,spectral_range=None,processed_data=None,data_type='PL',frac_s
     :param savepath (str)(optional): the path to save the figure, default is None
     :return:
     """
-    intint = get_intint(data, spectral_range=spectral_range, processed_data=processed_data)
-    maxint = get_maxint(data, spectral_range=spectral_range, processed_data=processed_data)
-    com = get_com(data, spectral_range=spectral_range, processed_data=processed_data)
+    intint = get_intint(data, spectral_range=spectral_range, **kwargs)
+    maxint = get_maxint(data, spectral_range=spectral_range, **kwargs)
+    com = get_com(data, spectral_range=spectral_range, **kwargs)
+    # rescale intensity to adjust the contrast
+    map_list = [intint, maxint, com]
+    v_ranges = []
+    for i in range(len(map_list)):
+        p1,p2 = np.percentile(map_list[i], q=percentile_range)
+        map_list[i] = exposure.rescale_intensity(map_list[i], in_range=(p1, p2))
+    """
     # histogram equalization for better contrast
     intint = exposure.equalize_hist(intint, nbins=500)
     maxint = exposure.equalize_hist(maxint, nbins=500)
     com = exposure.equalize_hist(com, nbins=500)
+    """
     # Get the scalebar length
     len_in_pix, length, width = get_scalebar_length(intint, data.axes_manager[0].scale, percent=frac_scalebar)
 
     fig, ax = plt.subplots(1, 3, figsize=(18, 5))
     # Plot the integrated intensity map
-    cmap1 = ax[0].imshow(intint, cmap='viridis')
+    cmap1 = ax[0].imshow(map_list[0], cmap='viridis')
     ax[0].set_title('Integrated Intensity Map', fontsize=14)
     ax[0].set_axis_off()
     scalebar1 = AnchoredSizeBar(ax[0].transData, len_in_pix, str(length) + ' μm', 4, pad=1,
@@ -256,7 +255,7 @@ def plot_maps(data,spectral_range=None,processed_data=None,data_type='PL',frac_s
     cbar1 = fig.colorbar(cmap1, ax=ax[0], format=fmt)
     cbar1.set_label('{} integrated intensity / a.u.'.format(data_type), fontsize=12, labelpad=10)
     # Plot the maximum intensity map
-    cmap2 = ax[1].imshow(maxint, cmap='viridis')
+    cmap2 = ax[1].imshow(map_list[1], cmap='viridis')
     ax[1].set_title('Maximum Intensity Map', fontsize=14)
     ax[1].set_axis_off()
     scalebar2 = AnchoredSizeBar(ax[1].transData, len_in_pix, str(length) + ' μm', 4, pad=1,
@@ -266,7 +265,7 @@ def plot_maps(data,spectral_range=None,processed_data=None,data_type='PL',frac_s
     cbar2 = fig.colorbar(cmap2, ax=ax[1])
     cbar2.set_label('{} maximum intensity / a.u.'.format(data_type), fontsize=12, labelpad=10)
     # Plot the COM map
-    cmap3 = ax[2].imshow(com, cmap='viridis')
+    cmap3 = ax[2].imshow(map_list[2], cmap='viridis')
     ax[2].set_title('Centre of Mass Map', fontsize=14)
     ax[2].set_axis_off()
     scalebar3 = AnchoredSizeBar(ax[2].transData, len_in_pix, str(length) + ' μm', 4, pad=1,
@@ -283,7 +282,7 @@ def plot_maps(data,spectral_range=None,processed_data=None,data_type='PL',frac_s
             plt.savefig(savepath+figname+'.png', transparent=True, dpi=300)
     plt.show()
 
-    return intint, maxint, com
+    return map_list
 
 #%% Plot an integrated intensity map
 def intint_map(data, data_type,
@@ -299,7 +298,7 @@ def intint_map(data, data_type,
     :return: intint (np.ndarray): the integrated intensity map
     """
     intint = get_intint(data, *args, **kwargs)
-    '''
+    """
     Spectr = data.axes_manager[2].axis
     if spectral_range is not None:
         index1 = abs(Spectr - spectral_range[0]).argmin()
@@ -311,7 +310,7 @@ def intint_map(data, data_type,
         intint = processed_data[:,:,index1:index2].sum(axis=2)
     else:
         intint = data.data[:,:,index1:index2].sum(axis=2)
-    '''
+    """
     # Get the scalebar length
     len_in_pix, length, width = get_scalebar_length(intint, data.axes_manager[0].scale, percent=frac_scalebar)
     # Use histogram to get a better contrast
@@ -367,13 +366,13 @@ def int_map(original_data, wavelength, data_type,
                 fig (matplotlib.figure.Figure): the figure object,
                 ax (matplotlib.axes._axes.Axes): the axes object,
     """
-    '''
+    """
     Spectr = original_data.axes_manager[2].axis
     if processed_data is not None:
         int_map = processed_data[:,:,abs(Spectr-wavelength).argmin()]
     else:
         int_map = original_data.data[:,:,abs(Spectr-wavelength).argmin()]
-    '''
+    """
     int_map = get_int(original_data, wavelength, *args, **kwargs)
     # Get the scalebar length
     len_in_pix, length, width = get_scalebar_length(int_map, original_data.axes_manager[0].scale, percent=frac_scalebar)
@@ -418,106 +417,6 @@ def int_map(original_data, wavelength, data_type,
         else:
             np.savetxt(savepath+filename+'.txt', int_map)
     return int_map
-
-#%% Create a binary mask to Highlight the features
-from skimage import morphology
-def create_mask(map2d, value_threshold, min_size, area_threshold):
-    '''
-    Create a binary mask based on the 2D map
-    :param map2d (np.ndarray): the 2D map
-    :param min_size (int): the minimum size of the object
-    :param area_threshold (int): the area threshold
-    :return: mask (np.ndarray): the binary mask
-    '''
-    # convert the map with float values to grayscale image
-    map2d_gray = np.rint((map2d/map2d.max())*255)
-    # create a binary mask (for example, fiducial marker area is 0, the rest is 1)
-    mask = morphology.remove_small_holes(morphology.remove_small_objects(map2d_gray > value_threshold, min_size=min_size),
-                                         area_threshold=area_threshold)
-    # convert the mask to uint8
-    mask = mask.astype(np.uint8)
-    return mask
-
-#%% Image registration using ANTs with optional parameters
-def ants_registration(fixed_img, moving_img,type_of_transform,random_seed=None,interpolator='nearestNeighbor',outprefix='C:/',
-                      savefig=False,figname=None,savepath=None):
-    """
-    Image registration using ANTs
-    :param fixed_img (np.ndarray): the fixed image
-    :param moving_img (np.ndarray): the moving image
-    :param type_of_transform (str): the type of the transformation supported by ANTs
-    :param random_seed (int)(optional): the random seed, used to improve the reproducibility of the registration
-    :param interpolator (str)(optional): the interpolator used for resampling the image, default is 'nearestNeighbor'
-    :return: transform (dict): the transformation matrix
-        warped_moving (np.ndarray): the registered moving image
-    """
-    fixed = ants.from_numpy(fixed_img)
-    moving = ants.from_numpy(moving_img)
-
-    transform = ants.registration(fixed=fixed, moving=moving, type_of_transform=type_of_transform,random_seed=random_seed,outprefix=outprefix)
-    warped_moving = ants.apply_transforms(fixed=fixed, moving=moving, transformlist=transform['fwdtransforms'], interpolator=interpolator).numpy()
-    #check the results of the registration
-    fig, ax = plt.subplots()
-    ax.imshow(fixed_img, cmap='gray')
-    ax.imshow(warped_moving, alpha=0.7, cmap='viridis')
-    # add a text box to show the random seed
-    if random_seed is not None:
-        ax.text(0.5, 0.95, 'Random seed: {}'.format(random_seed), horizontalalignment='left',
-                verticalalignment='center', transform=ax.transAxes, fontsize=12, color='white')
-    plt.tight_layout()
-    if savefig:
-        if figname is None:
-            print('Please provide a figure name')
-        else:
-            plt.savefig(savepath+figname+'.png', transparent=True, dpi=300)
-    plt.show()
-    return transform, warped_moving
-
-#%% Checking the registration results
-def check_registration(fixed_img, warped_moving):
-    """
-    Check the registration results
-    :param fixed_img (np.ndarray): the fixed image
-    :param warped_moving (np.ndarray): the registered moving image
-    :return: None
-    """
-    fig, ax = plt.subplots()
-    ax.imshow(fixed_img, cmap='viridis')
-    ax.imshow(warped_moving, alpha=0.7, cmap='magma')
-    plt.tight_layout()
-    plt.show()
-
-#%% Apply the transform to the entire hyperspectral image dataset
-def transform2hsi(original_fixed_data, original_moving_data, transform, interpolator='nearestNeighbor',
-                  transform_type='fwdtransforms'):
-    """
-    Apply the transformation to the entire hyperspectral image dataset
-    :param original_fixed_data (LumiSpectrum): the original hyperspectral image dataset
-    :param original_moving_data (LumiSpectrum): the original hyperspectral image dataset
-    :param transform (dict): the transformation matrix
-    :param interpolator (str)(optional): the interpolator used for resampling the image, default is 'nearestNeighbor'
-    :return: warped_data (np.ndarray): the registered hyperspectral image dataset
-    """
-    warped_data = np.zeros(original_moving_data.data.shape)
-    for i in range(original_fixed_data.data.shape[2]):
-        fixed_data = ants.from_numpy(original_fixed_data.data[:,:,i])
-        moving_data = ants.from_numpy(original_moving_data.data[:,:,i])
-        warped_data[:,:,i] = ants.apply_transforms(fixed=fixed_data, moving=moving_data, transformlist=transform[transform_type],interpolator=interpolator).numpy()
-    return warped_data
-#%% Apply the transform to a 2d map/image
-def transform2map(fixed_data, moving_data, transform, interpolator='nearestNeighbor'):
-    """
-    Apply the transformation to a 2d map/image
-    :param fixed_data (np.ndarray): the fixed image
-    :param moving_data (np.ndarray): the moving image
-    :param transform (dict): the transformation matrix
-    :param interpolator (str)(optional): the interpolator used for resampling the image, default is 'nearestNeighbor'
-    :return: warped_data (np.ndarray): the registered image
-    """
-    fixed = ants.from_numpy(fixed_data)
-    moving = ants.from_numpy(moving_data)
-    warped_map = ants.apply_transforms(fixed=fixed, moving=moving, transformlist=transform['fwdtransforms'], interpolator=interpolator).numpy()
-    return warped_map
 #%% Plot colormap
 def plot_colormap(data, scale=None, frac_scalebar=0.133335,
                   cbar_adj=True,cbar_label=None, title=None, save_path=None):
@@ -568,7 +467,7 @@ def triple_gaussian(x, amp1, cen1, wid1, amp2, cen2, wid2, amp3, cen3, wid3):
             amp2 * np.exp(-(x - cen2)**2 / (2 * wid2**2)) +
             amp3 * np.exp(-(x - cen3)**2 / (2 * wid3**2)))
 #%% Jacobian conversion for the hyperspectral data
-def jacobian_conversion(hsdata):
+def jacobian_conversion(hsdata, copy=False, rewrite=False):
     """
     Convert the wavelength axis of the hyperspectral data to energy axis, and also convert the intensity using the Jacobian conversion
     Note that h*c is ignored in the conversion, so the intensity is not in absolute units.
@@ -583,10 +482,28 @@ def jacobian_conversion(hsdata):
     eV = 1.602176634e-19  # 1 eV in J
     energy_axis = h * c / (wl * 1e-9) / eV
     # Convert the intensity using the Jacobian conversion
-
-
+    intensity = hsdata.data / energy_axis[None,None,:] **2
+    if copy:
+        hsdata_new = hsdata.copy()
+        hsdata_new.data = intensity
+        # renew the metadata
+        hsdata_new.axes_manager[2].name = 'Energy'
+        hsdata_new.axes_manager[2].units = 'eV'
+        hsdata_new.axes_manager[2].axis = energy_axis
+        hsdata_new.axes_manager[2].size = energy_axis.size
+        return hsdata_new, energy_axis
+    if rewrite:
+        hsdata.data = intensity
+        # renew the metadata
+        hsdata.axes_manager[2].name = 'Energy'
+        hsdata.axes_manager[2].units = 'eV'
+        hsdata.axes_manager[2].axis = energy_axis
+        hsdata.axes_manager[2].size = energy_axis.size
+        return hsdata, energy_axis
+    else:
+        return intensity, energy_axis
 #%% tripple gaussian fitting to extract parameters and errors
-def gaussian_fit(data, func_name='triple_gaussian',initial_guesses=None,bounds=(-np.inf,np.inf)):
+def gaussian_fit(data, jacobian=False, func_name='triple_gaussian',initial_guesses=None,bounds=(-np.inf,np.inf), **kwargs):
     """
     Fit the PL spectrum of a single pixel with the triple Gaussian peaks
     :param data (LumiSpectrum): the original (or reconstructed) hyperspectral data read by hyperspy
@@ -595,6 +512,11 @@ def gaussian_fit(data, func_name='triple_gaussian',initial_guesses=None,bounds=(
     :return: params (np.ndarray): the Gaussian parameters,
                 errors (np.ndarray): the errors of the Gaussian parameters
     """
+    if jacobian:
+        spectra, energy_axis = jacobian_conversion(data, copy=False, rewrite=False)
+    else:
+        spectra = data.data
+        energy_axis = data.axes_manager[2].axis
     if func_name == 'triple_gaussian':
         func = triple_gaussian
         fit_params = np.zeros((data.data.shape[0], data.data.shape[1], 9))
@@ -603,13 +525,13 @@ def gaussian_fit(data, func_name='triple_gaussian',initial_guesses=None,bounds=(
         func = gaussian
         fit_params = np.zeros((data.data.shape[0], data.data.shape[1], 3))
         fit_errors = np.zeros((data.data.shape[0], data.data.shape[1], 3))
-    wavelengths = data.axes_manager[2].axis
+
     for i in range(data.data.shape[0]):
         for j in range(data.data.shape[1]):
-            Spectra = data.data[i, j, :]
+            spectrum = spectra[i, j, :]
             try:
                 # Fit the spectrum with the triple Gaussian function
-                popt, cov = curve_fit(func, wavelengths, Spectra, p0=initial_guesses,bounds=bounds)
+                popt, cov = curve_fit(func, energy_axis, spectrum, p0=initial_guesses,bounds=bounds, **kwargs)
                 errors = np.sqrt(np.diag(cov))
                 fit_params[i, j, :] = popt
                 fit_errors[i, j, :] = errors
@@ -620,7 +542,9 @@ def gaussian_fit(data, func_name='triple_gaussian',initial_guesses=None,bounds=(
                 fit_errors[i, j, :] = 0
     return fit_params, fit_errors
 #%% Plot spectra with the Gaussian fitting and the residuals at the given pixel
-def plot_gaussian_fit(data, params, func_name='triple_gaussian', px_YX=(0,0), save_path=None):
+def plot_gaussian_fit(data, params, jacobian=False, func_name='triple_gaussian', px_YX=(0,0),
+                      residual_plot=False,
+                      save_path=None):
     """
     Plot the spectrum with the triple Gaussian fitting and the residuals at the given pixel
     :param original_data (LumiSpectrum): the original hyperspectral data
@@ -629,34 +553,52 @@ def plot_gaussian_fit(data, params, func_name='triple_gaussian', px_YX=(0,0), sa
     :param save_path (str)(optional): the path to save the figure
     :return: None
     """
-    fig, ax = plt.subplots(1, 2, figsize=(13, 5))
-    wavelengths = data.axes_manager[2].axis
-    spectrum = data.data[px_YX[0], px_YX[1], :]
+    if jacobian:
+        spectra, x_axis = jacobian_conversion(data, copy=False, rewrite=False)
+    else:
+        spectra = data.data
+        x_axis = data.axes_manager[2].axis
+    spectrum = spectra[px_YX[0], px_YX[1], :]
     params_pixel = params[px_YX[0], px_YX[1], :]
-    ax[0].scatter(wavelengths, spectrum, label='Data')
     if func_name == 'triple_gaussian':
-        fit1 = gaussian(wavelengths, *params_pixel[:3])
-        fit2 = gaussian(wavelengths, *params_pixel[3:6])
-        fit3 = gaussian(wavelengths, *params_pixel[6:])
-        fit = triple_gaussian(wavelengths, *params_pixel)
-        residuals = spectrum - fit
-        ax[0].plot(wavelengths, fit1, label='Gaussian 1',color='y')
-        ax[0].plot(wavelengths, fit2, label='Gaussian 2',color='g')
-        ax[0].plot(wavelengths, fit3, label='Gaussian 3',color='c')
-        ax[0].plot(wavelengths, fit, label='Triple Gaussian fit',color='r')
+        fit1 = gaussian(x_axis, *params_pixel[:3])
+        fit2 = gaussian(x_axis, *params_pixel[3:6])
+        fit3 = gaussian(x_axis, *params_pixel[6:])
+        fit = triple_gaussian(x_axis, *params_pixel)
     elif func_name == 'gaussian':
-        fit = gaussian(wavelengths, *params_pixel)
-        ax[0].plot(wavelengths, fit, label='Fit',color='r')
-        residuals = spectrum - fit
-    ax[1].scatter(wavelengths, residuals, label='Residuals')
-    ax[0].set_xlabel('Wavelength / nm',fontsize=12,labelpad=10)
-    ax[0].set_ylabel('PL intensity / a.u.',fontsize=12,labelpad=10)
-    ax[1].set_xlabel('Wavelength / nm',fontsize=12,labelpad=10)
-    ax[1].set_ylabel('Data - Fit',fontsize=12,labelpad=10)
-    ax[0].tick_params(which='both', direction='in', right=True, top=True)
-    ax[1].tick_params(which='both', direction='in', right=True, top=True)
-    ax[0].legend()
-    ax[1].legend()
+        fit = gaussian(x_axis, *params_pixel)
+    residuals = spectrum - fit
+    if not residual_plot:
+        fig, ax = plt.subplots(figsize=(8, 5))
+        ax.scatter(x_axis, spectrum)
+        if func_name == 'triple_gaussian':
+            ax.plot(x_axis, fit, color='r')
+            ax.plot(x_axis, fit1, color='y')
+            ax.plot(x_axis, fit2, color='g')
+            ax.plot(x_axis, fit3, color='c')
+        elif func_name == 'gaussian':
+            ax.plot(x_axis, fit, color='r')
+        ax.set_xlabel('Energy / eV')
+        ax.set_ylabel('PL intensity / a.u.')
+        ax.tick_params(which='both', direction='in', right=True, top=True)
+    if residual_plot:
+        fig, ax = plt.subplots(1, 2, figsize=(13, 5))
+        ax[0].scatter(x_axis, spectrum)
+        if func_name == 'triple_gaussian':
+            ax[0].plot(x_axis, fit1, color='y')
+            ax[0].plot(x_axis, fit2, color='g')
+            ax[0].plot(x_axis, fit3, color='c')
+            ax[0].plot(x_axis, fit, color='r')
+        elif func_name == 'gaussian':
+            ax[0].plot(x_axis, fit, color='r')
+        ax[1].scatter(x_axis, residuals)
+        ax[0].set_xlabel('Energy / eV',fontsize=12,labelpad=10)
+        ax[0].set_ylabel('PL intensity / a.u.',fontsize=12,labelpad=10)
+        ax[1].set_xlabel('Energy / eV',fontsize=12,labelpad=10)
+        ax[1].set_ylabel('Data - Fit',fontsize=12,labelpad=10)
+        ax[0].tick_params(which='both', direction='in', right=True, top=True)
+        ax[1].tick_params(which='both', direction='in', right=True, top=True)
+
     plt.tight_layout()
     if save_path is not None:
         plt.savefig(save_path,transparent=True,dpi=300)
@@ -911,6 +853,7 @@ def Spectrum_extracted(original_data, YX, data_type,major_locator=50,n_minor_loc
         plt.savefig(save_path,transparent=True,dpi=300)
     plt.show()
 #%% Plot an average spectrum
+# TODO: single x axis, for PL either wavelength or energy, for Raman only Raman shift
 def avg_spectrum(data, data_type,major_locator=50,n_minor_locator=2,params_ROI=None,
                  savefig=False,figname=None,
                  savefile=False, filename=None, save_path=None):
@@ -935,7 +878,7 @@ def avg_spectrum(data, data_type,major_locator=50,n_minor_locator=2,params_ROI=N
     fig, ax = plt.subplots()
     ax.plot(Spectr, avg_intens)
     if data_type == 'PL':
-        x_label = 'Wavelength / nm'
+        x_label = f'{data.axes_manager[2].name} / {data.axes_manager[2].units}'
         def lambda2energy(Spectr):
             return 1239.8 / Spectr
 
@@ -1181,3 +1124,107 @@ def plot_img(img_data,ROI=None,adj_hist=False,frac_scalebar=0.133335,save_path=N
     if save_path is not None:
         plt.savefig(save_path,transparent=True,dpi=300)
     plt.show()
+
+''' 
+#%% ===== Old code for image registration using ANTs ====
+import ants
+#%% Create a binary mask to Highlight the features
+from skimage import morphology
+def create_mask(map2d, value_threshold, min_size, area_threshold):
+    """
+    Create a binary mask based on the 2D map
+    :param map2d (np.ndarray): the 2D map
+    :param min_size (int): the minimum size of the object
+    :param area_threshold (int): the area threshold
+    :return: mask (np.ndarray): the binary mask
+    """
+    # convert the map with float values to grayscale image
+    map2d_gray = np.rint((map2d/map2d.max())*255)
+    # create a binary mask (for example, fiducial marker area is 0, the rest is 1)
+    mask = morphology.remove_small_holes(morphology.remove_small_objects(map2d_gray > value_threshold, min_size=min_size),
+                                         area_threshold=area_threshold)
+    # convert the mask to uint8
+    mask = mask.astype(np.uint8)
+    return mask
+
+#%% Image registration using ANTs with optional parameters
+def ants_registration(fixed_img, moving_img,type_of_transform,random_seed=None,interpolator='nearestNeighbor',outprefix='C:/',
+                      savefig=False,figname=None,savepath=None):
+    """
+    Image registration using ANTs
+    :param fixed_img (np.ndarray): the fixed image
+    :param moving_img (np.ndarray): the moving image
+    :param type_of_transform (str): the type of the transformation supported by ANTs
+    :param random_seed (int)(optional): the random seed, used to improve the reproducibility of the registration
+    :param interpolator (str)(optional): the interpolator used for resampling the image, default is 'nearestNeighbor'
+    :return: transform (dict): the transformation matrix
+        warped_moving (np.ndarray): the registered moving image
+    """
+    fixed = ants.from_numpy(fixed_img)
+    moving = ants.from_numpy(moving_img)
+
+    transform = ants.registration(fixed=fixed, moving=moving, type_of_transform=type_of_transform,random_seed=random_seed,outprefix=outprefix)
+    warped_moving = ants.apply_transforms(fixed=fixed, moving=moving, transformlist=transform['fwdtransforms'], interpolator=interpolator).numpy()
+    #check the results of the registration
+    fig, ax = plt.subplots()
+    ax.imshow(fixed_img, cmap='gray')
+    ax.imshow(warped_moving, alpha=0.7, cmap='viridis')
+    # add a text box to show the random seed
+    if random_seed is not None:
+        ax.text(0.5, 0.95, 'Random seed: {}'.format(random_seed), horizontalalignment='left',
+                verticalalignment='center', transform=ax.transAxes, fontsize=12, color='white')
+    plt.tight_layout()
+    if savefig:
+        if figname is None:
+            print('Please provide a figure name')
+        else:
+            plt.savefig(savepath+figname+'.png', transparent=True, dpi=300)
+    plt.show()
+    return transform, warped_moving
+
+#%% Checking the registration results
+def check_registration(fixed_img, warped_moving):
+    """
+    Check the registration results
+    :param fixed_img (np.ndarray): the fixed image
+    :param warped_moving (np.ndarray): the registered moving image
+    :return: None
+    """
+    fig, ax = plt.subplots()
+    ax.imshow(fixed_img, cmap='viridis')
+    ax.imshow(warped_moving, alpha=0.7, cmap='magma')
+    plt.tight_layout()
+    plt.show()
+
+#%% Apply the transform to the entire hyperspectral image dataset
+def transform2hsi(original_fixed_data, original_moving_data, transform, interpolator='nearestNeighbor',
+                  transform_type='fwdtransforms'):
+    """
+    Apply the transformation to the entire hyperspectral image dataset
+    :param original_fixed_data (LumiSpectrum): the original hyperspectral image dataset
+    :param original_moving_data (LumiSpectrum): the original hyperspectral image dataset
+    :param transform (dict): the transformation matrix
+    :param interpolator (str)(optional): the interpolator used for resampling the image, default is 'nearestNeighbor'
+    :return: warped_data (np.ndarray): the registered hyperspectral image dataset
+    """
+    warped_data = np.zeros(original_moving_data.data.shape)
+    for i in range(original_fixed_data.data.shape[2]):
+        fixed_data = ants.from_numpy(original_fixed_data.data[:,:,i])
+        moving_data = ants.from_numpy(original_moving_data.data[:,:,i])
+        warped_data[:,:,i] = ants.apply_transforms(fixed=fixed_data, moving=moving_data, transformlist=transform[transform_type],interpolator=interpolator).numpy()
+    return warped_data
+#%% Apply the transform to a 2d map/image
+def transform2map(fixed_data, moving_data, transform, interpolator='nearestNeighbor'):
+    """
+    Apply the transformation to a 2d map/image
+    :param fixed_data (np.ndarray): the fixed image
+    :param moving_data (np.ndarray): the moving image
+    :param transform (dict): the transformation matrix
+    :param interpolator (str)(optional): the interpolator used for resampling the image, default is 'nearestNeighbor'
+    :return: warped_data (np.ndarray): the registered image
+    """
+    fixed = ants.from_numpy(fixed_data)
+    moving = ants.from_numpy(moving_data)
+    warped_map = ants.apply_transforms(fixed=fixed, moving=moving, transformlist=transform['fwdtransforms'], interpolator=interpolator).numpy()
+    return warped_map
+'''
