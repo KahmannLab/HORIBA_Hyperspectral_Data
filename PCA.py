@@ -44,12 +44,10 @@ def sklearn_PCA(data,ScreePlot=False,n_PCs=None,*args, **kwargs):
             N_components = N_components[:n_PCs]
             EVR = EVR[:n_PCs]
         plt.plot(N_components, EVR, 'ro', markersize=5)
-        ''''
         # using majorlocator and minor locator to set the x-axis ticks
         plt.gca().xaxis.set_major_locator(MultipleLocator(2))
         plt.gca().xaxis.set_minor_locator(AutoMinorLocator(1))
-        '''
-        plt.xticks(N_components, fontsize=10)
+        plt.tick_params(which='both', direction='in', right=True, top=True)
         # plt.yticks(fontsize=10)
         plt.xlabel('Number of components')
         plt.ylabel('Explained variance ratio')
@@ -60,8 +58,9 @@ def sklearn_PCA(data,ScreePlot=False,n_PCs=None,*args, **kwargs):
 
     return pca, component_spectra
 #%% plot the PCA component spectra
-def plot_PCs(component_spectra, component_idx=6,
+def plot_PCs(component_spectra, x_axis, component_idx=6,
              x_label='Raman shift / cm$^{-1}$', y_label='Intensity / a.u.',
+             fontsize=12,labelpad=10, labelsize=12,
              savefig=False, figname=None, savepath=None):
     """
     Plot the PCA component spectra.
@@ -86,21 +85,23 @@ def plot_PCs(component_spectra, component_idx=6,
         raise ValueError("component_idx must be an int or a list of ints.")
     for idx in indices:
         fig, ax = plt.subplots()
-        ax.plot(component_spectra[idx], label=f'PC {idx + 1}')
-        ax.set_xlabel(x_label)
-        ax.set_ylabel(y_label)
+        ax.plot(x_axis,component_spectra[idx], label=f'PC {idx + 1}')
+        ax.set_xlabel(x_label, fontsize=fontsize, labelpad=labelpad)
+        ax.set_ylabel(y_label, fontsize=fontsize, labelpad=labelpad)
+        # set the tick fontsize
+        plt.tick_params(which='both', direction='in', right=True, top=True, labelsize=labelsize)
         ax.legend()
         plt.tight_layout()
         if savefig:
             if figname is None:
                 print(f"Warning: No figure name provided, using default 'PC{idx+1}'.")
-                figname = f'PC{idx+1}'
+                savename = f'PC{idx+1}'
             else:
-                figname = figname+f'_PC{idx+1}'
+                savename = figname+f'_PC{idx+1}'
             if savepath is not None:
-                plt.savefig(savepath+figname+'.png', transparent=True, dpi=300)
+                plt.savefig(savepath+savename+'.png', transparent=True, dpi=300)
             else:
-                plt.savefig(figname+'.png', transparent=True, dpi=300)
+                plt.savefig(savename+'.png', transparent=True, dpi=300)
                 print("Warning: No save path provided, saving in the current directory.")
 
         plt.show()
@@ -179,7 +180,28 @@ def get_scalebar_length(data, pixel_to_mum, percent=0.133335):
     width = 0.06 * len_in_pix
 
     return len_in_pix, length, width
-def score_map(data, pca, component_index,*args, **kwargs):
+
+#%% adjust colorbar ticks based on the histogram of the data
+def adjust_colorbar(data, bins=500, percentiles=(5, 95)):
+    """
+    Adjust the colorbar ticks based on the histogram of the data.
+    :param data: 2D array-like data for which to adjust the colorbar
+    :param bins: Number of bins for the histogram
+    :param percentiles: Percentiles to use for adjusting the colorbar limits
+    :return: vmin, vmax - adjusted colorbar limits
+    """
+    hist, bin_edges = np.histogram(data.flatten(), bins=bins)
+    cum_counts = np.cumsum(hist)
+    total_counts = np.sum(hist)
+
+    lower_bound = bin_edges[np.where(cum_counts >= total_counts * percentiles[0] / 100)[0][0]]
+    upper_bound = bin_edges[np.where(cum_counts <= total_counts * percentiles[1] / 100)[0][-1]]
+
+    return lower_bound, upper_bound
+#%%
+def score_map(data, pca, component_index,cbar_adjust=False,
+              fontsize=12,labelpad=10,
+              *args, **kwargs):
     """
     Plot the score map of the given PC
     :param data (LumiSpectrum): hyperspectral data
@@ -195,17 +217,141 @@ def score_map(data, pca, component_index,*args, **kwargs):
     len_in_pix, length, width = get_scalebar_length(score_map, data.axes_manager[0].scale, *args, **kwargs)
 
     fig, ax = plt.subplots()
-    cmap = ax.imshow(score_map, cmap='viridis')
+    if cbar_adjust:
+        vmin, vmax = adjust_colorbar(score_map,**kwargs)
+        cmap = ax.imshow(score_map, cmap='viridis', vmin=vmin, vmax=vmax)
+    else:
+        cmap = ax.imshow(score_map, cmap='viridis')
     ax.set_axis_off()
     scalebar = AnchoredSizeBar(ax.transData, len_in_pix, str(length) + ' μm', 4, pad=1,
                                 borderpad=0.1, sep=5, frameon=False, size_vertical=width, color='white',
                                 fontproperties={'size': 15, 'weight': 'bold'})
     ax.add_artist(scalebar)
-    cbar = fig.colorbar(cmap, ax=ax)
-    cbar.set_label('Score')
-    ax.set_title('Score map of the {}. PC'.format(component_index))  # index shown in the title is starting from 1
+    fmt = matplotlib.ticker.ScalarFormatter(useMathText=True)
+    fmt.set_powerlimits((0, 0))
+    cbar = fig.colorbar(cmap, ax=ax, format=fmt)
+    cbar.set_label('Score', fontsize=fontsize, labelpad=labelpad)
+    #ax.set_title('Score map of the {}. PC'.format(component_index))  # index shown in the title is starting from 1
     plt.tight_layout()
     plt.show()
+#%% Option 2: applying PCA via scipy
+from scipy.linalg import svd
+def svd_PCA(data, ScreePlot=False, n_PCs=None, full_matrices=False):
+    """
+    Perform PCA using SVD.
+    :param data (LumiSpectrum): hyperspectral data
+    :param ScreePlot (bool): whether to plot the explained variance ratio
+    :param n_PCs (int, optional): number of principal components to consider for the scree plot
+    :param full_matrices (bool): whether to compute full matrices U and Vt
+    :return: U, S, Vt, component_spectra, explained_variance_ratio
+    """
+    # flatten hyperspy datacube to 2D (pixels × spectrum)
+    flat_data = stack_spectra_columnwise(data.data)
+    # mean center
+    X = flat_data - flat_data.mean(axis=0)
+
+    # perform SVD: X = U Σ Vt
+    U, S, Vt = svd(X, full_matrices=full_matrices)
+
+    # Vt rows are principal components (like sklearn's pca.components_)
+    component_spectra = Vt
+
+    # explained variance (match sklearn's pca.explained_variance_ratio_)
+    n_samples = X.shape[0]
+    explained_variance = (S**2) / (n_samples - 1)
+    total_var = explained_variance.sum()
+    explained_variance_ratio = explained_variance / total_var
+
+    if ScreePlot:
+        EVR = explained_variance_ratio
+        N_components = np.arange(1, len(EVR) + 1)
+        if n_PCs is not None:
+            N_components = N_components[:n_PCs]
+            EVR = EVR[:n_PCs]
+
+        import matplotlib.pyplot as plt
+        plt.plot(N_components, EVR, 'ro', markersize=5)
+        # set major and minor locators for x-axis
+        plt.gca().xaxis.set_major_locator(MultipleLocator(2))
+        plt.gca().xaxis.set_minor_locator(AutoMinorLocator(1))
+        plt.tick_params(which='both', direction='in', right=True, top=True)
+        plt.xlabel('Number of components')
+        plt.ylabel('Explained variance ratio')
+        plt.yscale('log')
+        plt.title('Explained variance ratio by SVD')
+        plt.tight_layout()
+        plt.show()
+
+    return U, S, Vt, component_spectra, explained_variance_ratio
+#%% reconstruct the data using SVD
+def reconstruct_data_svd(data, U, S, Vt, component_idx=None, component_list=None):
+    flat_data = stack_spectra_columnwise(data.data)
+    X = flat_data - flat_data.mean(axis=0)
+
+    if component_idx is not None:
+        selected_indices = list(range(component_idx))
+    elif component_list is not None:
+        selected_indices = component_list
+    else:
+        raise ValueError("Either component_idx or component_list must be provided.")
+
+    # Use selected components: X ≈ U_k Σ_k Vt_k
+    U_sel = U[:, selected_indices]
+    S_sel = np.diag(S[selected_indices])
+    Vt_sel = Vt[selected_indices, :]
+
+    X_reconstructed = U_sel @ S_sel @ Vt_sel + flat_data.mean(axis=0)
+
+    datacube_reconstructed = unstack_spectra_columnwise(
+        X_reconstructed, data.data.shape[0], data.data.shape[1]
+    )
+    return datacube_reconstructed
+
+#%% score map
+def score_map_svd(data, U, S, component_index, cbar_adjust=False, *args, **kwargs):
+    """
+    Plot the score map using SVD results.
+    component_index starts from 1.
+    """
+    flat_data = stack_spectra_columnwise(data.data)
+    X = flat_data - flat_data.mean(axis=0)
+
+    # Project onto PC
+    scores = U[:, component_index - 1] * S[component_index - 1]
+
+    # reshape back
+    scores_reshaped = unstack_spectra_columnwise(
+        scores[:, np.newaxis], data.data.shape[0], data.data.shape[1]
+    )[:, :, 0]
+
+    # scale bar
+    len_in_pix, length, width = get_scalebar_length(
+        scores_reshaped, data.axes_manager[0].scale, *args, **kwargs
+    )
+
+    import matplotlib.pyplot as plt
+    from mpl_toolkits.axes_grid1.anchored_artists import AnchoredSizeBar
+
+    fig, ax = plt.subplots()
+    if cbar_adjust:
+        vmin, vmax = adjust_colorbar(scores_reshaped,**kwargs)
+        cmap = ax.imshow(scores_reshaped, cmap='viridis', vmin=vmin, vmax=vmax)
+    else:
+        cmap = ax.imshow(scores_reshaped, cmap='viridis')
+    ax.set_axis_off()
+    scalebar = AnchoredSizeBar(
+        ax.transData, len_in_pix, str(length) + ' μm', 4,
+        pad=1, borderpad=0.1, sep=5, frameon=False,
+        size_vertical=width, color='white',
+        fontproperties={'size': 15, 'weight': 'bold'}
+    )
+    ax.add_artist(scalebar)
+    cbar = fig.colorbar(cmap, ax=ax)
+    cbar.set_label('Score')
+    ax.set_title(f'Score map of the {component_index}. PC')
+    plt.tight_layout()
+    plt.show()
+
 '''    
 #%% Old PCA functions based on Hyperspy PCA
 # Get the explained variance ratio plot (scree plot)
