@@ -65,7 +65,9 @@ def load_xml(file_path,remove_spikes=False,threshold='auto', remove_negatives=Fa
         visual_data(data, xlabel=xlabel, ylabel=ylabel)
     return data
 #%% visualize the hyperspectral data
-def visual_data(data, xlabel='Wavelength / nm', ylabel='PL intensity / a.u.', savefig=False, figname=None, savepath=None):
+def visual_data(data, xlabel='Wavelength / nm', ylabel='PL intensity / a.u.',
+                fontsize=12,labelpad=10, labelsize=12,
+                savefig=False, figname=None, savepath=None):
     """
     Plot all spectra of hyperspectral data in a single plot
     :param data (np.ndarray): the 2D dataset
@@ -80,9 +82,9 @@ def visual_data(data, xlabel='Wavelength / nm', ylabel='PL intensity / a.u.', sa
     for i in range(data.data.shape[0]):
         for j in range(data.data.shape[1]):
             ax.plot(data.axes_manager[2].axis, data.data[i, j, :])
-    ax.set_xlabel(xlabel, fontsize=12)
-    ax.set_ylabel(ylabel, fontsize=12)
-    ax.tick_params(which='both', direction='in', right=True, top=True)
+    ax.set_xlabel(xlabel, fontsize=fontsize, labelpad=labelpad)
+    ax.set_ylabel(ylabel, fontsize=fontsize, labelpad=labelpad)
+    ax.tick_params(which='both', direction='in', right=True, top=True, labelsize=labelsize)
     plt.tight_layout()
     if savefig:
         if figname is None:
@@ -205,6 +207,30 @@ def get_scalebar_length(data, pixel_to_mum, percent=0.133335):
     width = 0.06 * len_in_pix
 
     return len_in_pix, length, width
+#%% adjust colorbar ticks based on the histogram of the data
+def adjust_colorbar(data, bins=500, percentiles=(5, 95)):
+    """
+    Adjust the colorbar ticks based on the histogram of the data.
+    :param data: 2D array-like data for which to adjust the colorbar
+    :param bins: Number of bins for the histogram
+    :param percentiles: Percentiles to use for adjusting the colorbar limits
+    :return: vmin, vmax - adjusted colorbar limits
+    """
+    hist, bin_edges = np.histogram(data.flatten(), bins=bins)
+    cum_counts = np.cumsum(hist)
+    total_counts = np.sum(hist)
+
+    lower_bound = bin_edges[np.where(cum_counts >= total_counts * percentiles[0] / 100)[0][0]]
+    upper_bound = bin_edges[np.where(cum_counts <= total_counts * percentiles[1] / 100)[0][-1]]
+
+    return lower_bound, upper_bound
+
+#%%
+def lambda2energy(Spectr):
+    return 1239.8 / Spectr
+
+def energy2lambda(Spectr):
+    return 1239.8 / Spectr
 #%% Plot a combination of integrated intensity map, maximum intensity map, and COM map.
 from skimage import exposure
 def plot_maps(data,spectral_range=None,data_type='PL',frac_scalebar=0.133335,
@@ -288,6 +314,8 @@ def plot_maps(data,spectral_range=None,data_type='PL',frac_scalebar=0.133335,
 def intint_map(data, data_type,
                frac_scalebar=0.133335,
                savefig=False, figname=None, savefile=False, filename=None, savepath=None,
+               cbar_adj=True,
+               fontsize=12,labelpad=10,
                *args, **kwargs):
     """
     Plot an integrated intensity map over the given wavelength or wavenumber range
@@ -313,19 +341,14 @@ def intint_map(data, data_type,
     """
     # Get the scalebar length
     len_in_pix, length, width = get_scalebar_length(intint, data.axes_manager[0].scale, percent=frac_scalebar)
-    # Use histogram to get a better contrast
-    hist, bins = np.histogram(intint.flatten(), bins=500)
-
-    # find the bin-edges for the range from the maximal counts of 5% to the maximal counts of 95% in the histogram
-    cum_counts = np.cumsum(hist)
-    tot_counts = np.sum(hist)
-    tot_counts_5 = tot_counts * 0.05
-    tot_counts_95 = tot_counts * 0.95
-    bin_edges = bins[np.where((cum_counts >= tot_counts_5) & (cum_counts <= tot_counts_95))]
 
     # Plot the map
     fig,ax = plt.subplots()
-    cmap = ax.imshow(intint, vmin=bin_edges[0],vmax=bin_edges[-1],cmap='viridis') # use the bin-edges as the limits for correcting the color scale
+    if cbar_adj:
+        vmin, vmax = adjust_colorbar(intint,**kwargs)
+        cmap = ax.imshow(intint, vmin=vmin, vmax=vmax, cmap='viridis')
+    else:
+        cmap = ax.imshow(intint, cmap='viridis')
     ax.set_axis_off()
     scalebar = AnchoredSizeBar(ax.transData, len_in_pix, str(length) + ' μm', 4, pad=1,
                                borderpad=0.1, sep=5, frameon=False, size_vertical=width, color='white',
@@ -334,7 +357,7 @@ def intint_map(data, data_type,
     fmt = matplotlib.ticker.ScalarFormatter(useMathText=True)
     fmt.set_powerlimits((0, 0))
     cbar = fig.colorbar(cmap, ax=ax, format=fmt)
-    cbar.set_label('{} integrated intensity / a.u.'.format(data_type))
+    cbar.set_label('{} integrated intensity / a.u.'.format(data_type), fontsize=fontsize, labelpad=labelpad)
     plt.tight_layout()
     if savefig:
         if figname is None:
@@ -353,6 +376,8 @@ def intint_map(data, data_type,
 #%%plot an intensity map(relative intensity map) at the given wavelength or wavenumber
 def int_map(original_data, wavelength, data_type,
             frac_scalebar=0.133335,
+            cbar_adj=True,
+            fontsize=12,labelpad=10,
             savefig=False, figname=None, savefile=False, filename=None, savepath=None,
             *args, **kwargs):
     """
@@ -376,18 +401,13 @@ def int_map(original_data, wavelength, data_type,
     int_map = get_int(original_data, wavelength, *args, **kwargs)
     # Get the scalebar length
     len_in_pix, length, width = get_scalebar_length(int_map, original_data.axes_manager[0].scale, percent=frac_scalebar)
-    # Use histogram to avoid the bad pixel in order to get a better ratio map
-    hist, bins = np.histogram(int_map.flatten(), bins=500)
-
-    # find the bin-edges for the range from the maximal counts of 5% to the maximal counts of 95% in the histogram
-    cum_counts = np.cumsum(hist)
-    tot_counts = np.sum(hist)
-    tot_counts_5 = tot_counts * 0.05
-    tot_counts_95 = tot_counts * 0.95
-    bin_edges = bins[np.where((cum_counts >= tot_counts_5) & (cum_counts <= tot_counts_95))]
 
     fig, ax = plt.subplots()
-    cmap = ax.imshow(int_map,vmin=bin_edges[0], vmax=bin_edges[-1])
+    if cbar_adj:
+        vmin, vmax = adjust_colorbar(int_map, **kwargs)
+        cmap = ax.imshow(int_map, vmin=vmin, vmax=vmax, cmap='viridis')
+    else:
+        cmap = ax.imshow(int_map, cmap='viridis')
     ax.set_axis_off()
     scalebar = AnchoredSizeBar(ax.transData, len_in_pix, str(length) + ' μm', 4, pad=1,
                                  borderpad=0.1, sep=5, frameon=False, size_vertical=width, color='white',
@@ -402,7 +422,7 @@ def int_map(original_data, wavelength, data_type,
     elif data_type == 'RamanRatio':
         cbarlabel = 'Normalized Raman intensity'
     cbar=fig.colorbar(cmap, ax=ax)
-    cbar.set_label(cbarlabel, fontsize=12, labelpad=10)
+    cbar.set_label(cbarlabel, fontsize=fontsize, labelpad=labelpad)
     plt.tight_layout()
     if savefig:
         if figname is None:
@@ -419,7 +439,9 @@ def int_map(original_data, wavelength, data_type,
     return int_map
 #%% Plot colormap
 def plot_colormap(data, scale=None, frac_scalebar=0.133335,
-                  cbar_adj=True,cbar_label=None, title=None, save_path=None):
+                  fontsize=12,labelpad=10,
+                  cbar_adj=True,cbar_label=None, title=None, save_path=None,
+                  **kwargs):
     """
     Plot the colormap of the hyperspectral data
     :param data (np.ndarray): the hyperspectral data
@@ -429,17 +451,12 @@ def plot_colormap(data, scale=None, frac_scalebar=0.133335,
     :param save_path (str)(optional): the path to save the figure, default is None
     :return: None
     """
-    if cbar_adj:
-        hist, bins = np.histogram(data.flatten(), bins=500)
-        cum_counts = np.cumsum(hist)
-        tot_counts = np.sum(hist)
-        tot_counts_5 = tot_counts * 0.05
-        tot_counts_95 = tot_counts * 0.95
-        bin_edges = bins[np.where((cum_counts >= tot_counts_5) & (cum_counts <= tot_counts_95))]
-        vmin = bin_edges[0]
-        vmax = bin_edges[-1]
     fig, ax = plt.subplots()
-    cmap = ax.imshow(data, vmin=vmin, vmax=vmax)
+    if cbar_adj:
+        vmin, vmax = adjust_colorbar(data, **kwargs)
+        cmap = ax.imshow(data, vmin=vmin, vmax=vmax)
+    else:
+        cmap = ax.imshow(data)
     if scale is not None:
         len_in_pix, length, width = get_scalebar_length(data, scale, percent=frac_scalebar)
         scalebar = AnchoredSizeBar(ax.transData, len_in_pix, str(length) + ' μm', 4, pad=1,
@@ -451,7 +468,7 @@ def plot_colormap(data, scale=None, frac_scalebar=0.133335,
     fmt.set_powerlimits((0, 0))
     cbar = fig.colorbar(cmap, ax=ax, format=fmt)
     if cbar_label is not None:
-        cbar.set_label(cbar_label)
+        cbar.set_label(cbar_label, fontsize=fontsize, labelpad=labelpad)
     if title is not None:
         ax.set_title(title)
     plt.tight_layout()
@@ -544,6 +561,7 @@ def gaussian_fit(data, jacobian=False, func_name='triple_gaussian',initial_guess
 #%% Plot spectra with the Gaussian fitting and the residuals at the given pixel
 def plot_gaussian_fit(data, params, jacobian=False, func_name='triple_gaussian', px_YX=(0,0),
                       residual_plot=False,
+                      fontsize=12,labelpad=10, labelsize=12,
                       save_path=None):
     """
     Plot the spectrum with the triple Gaussian fitting and the residuals at the given pixel
@@ -578,9 +596,9 @@ def plot_gaussian_fit(data, params, jacobian=False, func_name='triple_gaussian',
             ax.plot(x_axis, fit3, color='c')
         elif func_name == 'gaussian':
             ax.plot(x_axis, fit, color='r')
-        ax.set_xlabel('Energy / eV')
-        ax.set_ylabel('PL intensity / a.u.')
-        ax.tick_params(which='both', direction='in', right=True, top=True)
+        ax.set_xlabel('Energy / eV', fontsize=fontsize, labelpad=labelpad)
+        ax.set_ylabel('PL intensity / a.u.', fontsize=fontsize, labelpad=labelpad)
+        ax.tick_params(which='both', direction='in', right=True, top=True, labelsize=labelsize)
     if residual_plot:
         fig, ax = plt.subplots(1, 2, figsize=(13, 5))
         ax[0].scatter(x_axis, spectrum)
@@ -592,12 +610,12 @@ def plot_gaussian_fit(data, params, jacobian=False, func_name='triple_gaussian',
         elif func_name == 'gaussian':
             ax[0].plot(x_axis, fit, color='r')
         ax[1].scatter(x_axis, residuals)
-        ax[0].set_xlabel('Energy / eV',fontsize=12,labelpad=10)
-        ax[0].set_ylabel('PL intensity / a.u.',fontsize=12,labelpad=10)
-        ax[1].set_xlabel('Energy / eV',fontsize=12,labelpad=10)
-        ax[1].set_ylabel('Data - Fit',fontsize=12,labelpad=10)
-        ax[0].tick_params(which='both', direction='in', right=True, top=True)
-        ax[1].tick_params(which='both', direction='in', right=True, top=True)
+        ax[0].set_xlabel('Energy / eV', fontsize=fontsize, labelpad=labelpad)
+        ax[0].set_ylabel('PL intensity / a.u.', fontsize=fontsize, labelpad=labelpad)
+        ax[1].set_xlabel('Energy / eV', fontsize=fontsize, labelpad=labelpad)
+        ax[1].set_ylabel('Data - Fit', fontsize=fontsize, labelpad=labelpad)
+        ax[0].tick_params(which='both', direction='in', right=True, top=True, labelsize=labelsize)
+        ax[1].tick_params(which='both', direction='in', right=True, top=True, labelsize=labelsize)
 
     plt.tight_layout()
     if save_path is not None:
@@ -608,7 +626,9 @@ def plot_gaussian_fit(data, params, jacobian=False, func_name='triple_gaussian',
 from scipy import integrate
 def plot_intint_gaussian(original_data,params,cbar_label='PL integrated intensity / a.u.',cbar_adj=True, ROI=None,
                          frac_scalebar=0.133335,
-                         sum_threshold=None,save_path=None):
+                         fontsize=12,labelpad=10,
+                         sum_threshold=None,save_path=None,
+                         **kwargs):
     """
     Plot the integrated intensity maps of the individual Gaussian peaks over the entire spectral range
     :param original_data (LumiSpectrum): the original hyperspectral data used to provide the scale information
@@ -622,8 +642,6 @@ def plot_intint_gaussian(original_data,params,cbar_label='PL integrated intensit
     wls = original_data.axes_manager[2].axis
     map_shape = original_data.data.shape
     intint_gaussian = np.zeros(map_shape[:2])
-    vmin = np.min(intint_gaussian)
-    vmax = np.max(intint_gaussian)
     # Loop through each pixel in the spatial dimensions
     for i in range(map_shape[0]):
         for j in range(map_shape[1]):
@@ -637,18 +655,12 @@ def plot_intint_gaussian(original_data,params,cbar_label='PL integrated intensit
     # integrate a single Gaussian peak
     if ROI is not None:
         intint_gaussian = intint_gaussian[ROI[1]:ROI[1]+ROI[3], ROI[0]:ROI[0]+ROI[2]]
-    # use histogram to avoid the bad pixel in order to get a better ratio map
-    hist, bins = np.histogram(intint_gaussian.flatten(), bins=500)
-    cum_counts = np.cumsum(hist)
-    tot_counts = np.sum(hist)
-    tot_counts_5 = tot_counts * 0.05
-    tot_counts_95 = tot_counts * 0.95
-    bin_edges = bins[np.where((cum_counts >= tot_counts_5) & (cum_counts <= tot_counts_95))]
-    if cbar_adj:
-        vmin = bin_edges[0]
-        vmax = bin_edges[-1]
     fig, ax = plt.subplots()
-    cmap = ax.imshow(intint_gaussian, vmin=vmin, vmax=vmax)
+    if cbar_adj:
+        vmin, vmax = adjust_colorbar(intint_gaussian, **kwargs)
+        cmap = ax.imshow(intint_gaussian, vmin=vmin, vmax=vmax)
+    else:
+        cmap = ax.imshow(intint_gaussian)
     ax.set_axis_off()
     len_in_pix, length, width = get_scalebar_length(intint_gaussian, original_data.axes_manager[0].scale,
                                                      percent=frac_scalebar)
@@ -659,7 +671,7 @@ def plot_intint_gaussian(original_data,params,cbar_label='PL integrated intensit
     fmt = matplotlib.ticker.ScalarFormatter(useMathText=True)
     fmt.set_powerlimits((0, 0))
     cbar = fig.colorbar(cmap, ax=ax, format=fmt)
-    cbar.set_label(cbar_label)
+    cbar.set_label(cbar_label, fontsize=fontsize, labelpad=labelpad)
     plt.tight_layout()
     if save_path is not None:
         plt.savefig(save_path,transparent=True,dpi=300)
@@ -669,7 +681,10 @@ def plot_intint_gaussian(original_data,params,cbar_label='PL integrated intensit
 #%% Plot the centre of mass map
 # Calculate and plot the COM of the PL spectrum for all pixels using vectorized operations
 def plot_com_map(original_data, processed_data=None, spectral_range=None, params_ROI=None,data_type='PL',
-                 frac_scalebar=0.133335,save_path=None):
+                 cbar_adjust=True,
+                 fontsize=12,labelpad=10,
+                 frac_scalebar=0.133335,save_path=None,
+                 **kwargs):
     """
     Plot the centre of mass (COM) map of the PL spectrum for all pixels
     :param original_data (LumiSpectrum): the original/reconstructed hyperspectral data
@@ -704,30 +719,19 @@ def plot_com_map(original_data, processed_data=None, spectral_range=None, params
     if data_type == 'PL':
         #convert wavelength to energy
         #com_map = 1239.8 / com_map
-        cbarlabel = 'PL center of mass energy / nm'
+        cbarlabel = f'PL center of mass / {original_data.axes_manager[2].units}'
     elif data_type == 'Raman':
-        cbarlabel = 'Raman center of mass energy / cm$^{-1}$'
+        cbarlabel = 'Raman center of mass / cm$^{-1}$'
     # check if the is NaN and replace it with zero
     com_map = np.nan_to_num(com_map)
-    # adjust the color scale using the histogram
-    hist, bins = np.histogram(com_map.flatten(), bins=500)
-    cum_counts = np.cumsum(hist)
-    tot_counts = np.sum(hist)
-    tot_counts_5 = tot_counts * 0.05
-    tot_counts_95 = tot_counts * 0.95
-    bin_edges = bins[np.where((cum_counts >= tot_counts_5) & (cum_counts <= tot_counts_95))]
     fig, ax = plt.subplots()
     if params_ROI is not None:
-        com_map_ROI = com_map[params_ROI[1]:params_ROI[1]+params_ROI[3],params_ROI[0]:params_ROI[0]+params_ROI[2]]
-        hist, bins = np.histogram(com_map_ROI.flatten(), bins=500)
-        cum_counts = np.cumsum(hist)
-        tot_counts = np.sum(hist)
-        tot_counts_5 = tot_counts * 0.05
-        tot_counts_95 = tot_counts * 0.95
-        bin_edges = bins[np.where((cum_counts >= tot_counts_5) & (cum_counts <= tot_counts_95))]
-        cmap = ax.imshow(com_map_ROI,vmin=bin_edges[0], vmax=bin_edges[-1])
+        com_map = com_map[params_ROI[1]:params_ROI[1]+params_ROI[3],params_ROI[0]:params_ROI[0]+params_ROI[2]]
+    if cbar_adjust:
+        vmin, vmax = adjust_colorbar(com_map,**kwargs)
+        cmap = ax.imshow(com_map, vmin=vmin, vmax=vmax)
     else:
-        cmap = ax.imshow(com_map,vmin=bin_edges[0], vmax=bin_edges[-1])
+        cmap = ax.imshow(com_map)
     ax.set_axis_off()
     len_in_pix, length, width = get_scalebar_length(com_map, original_data.axes_manager[0].scale,
                                                      percent=frac_scalebar)
@@ -736,7 +740,7 @@ def plot_com_map(original_data, processed_data=None, spectral_range=None, params
                                fontproperties={'size': 15, 'weight': 'bold'})
     ax.add_artist(scalebar)
     cbar = fig.colorbar(cmap, ax=ax, format='%.1f')
-    cbar.set_label(cbarlabel)
+    cbar.set_label(cbarlabel, fontsize=fontsize, labelpad=labelpad)
     plt.tight_layout()
     if save_path is not None:
         plt.savefig(save_path,transparent=True,dpi=300)
@@ -759,7 +763,10 @@ def coord_extract(map_data, value='max'):
     return coord
 
 #%% Mark points of interest on the map
-def point_marker(map_data,original_data, YX,cbarlabel='Intensity / a.u.',frac_scalebar=0.133335,save_path=None):
+def point_marker(map_data,original_data, YX,cbarlabel='Intensity / a.u.',frac_scalebar=0.133335,
+                 fontsize=12,labelpad=10,
+                 cbar_adjust=True,save_path=None,
+                 **kwargs):
     """
     Mark the points of interest on the map
     :param map_data (np.ndarray): the dataset of map
@@ -768,19 +775,15 @@ def point_marker(map_data,original_data, YX,cbarlabel='Intensity / a.u.',frac_sc
     :param cbarlabel (str): the label of the colorbar
     :param save_path (str)(optional): the path to save the figure
     """
-    # use histogram to avoid the bad pixel in order to get a better ratio map
-    hist, bins = np.histogram(map_data.flatten(), bins=500)
-    # find the bin-edges for the range from the maximal counts of 5% to the maximal counts of 95% in the histogram
-    cum_counts = np.cumsum(hist)
-    tot_counts = np.sum(hist)
-    tot_counts_5 = tot_counts * 0.05
-    tot_counts_95 = tot_counts * 0.95
-    bin_edges = bins[np.where((cum_counts >= tot_counts_5) & (cum_counts <= tot_counts_95))]
     # define scalebar
     len_in_pix, length, width = get_scalebar_length(map_data, original_data.axes_manager[0].scale,
                                                      percent=frac_scalebar)
     fig,ax = plt.subplots()
-    cmap=ax.imshow(map_data,vmin=bin_edges[0], vmax=bin_edges[-1])
+    if cbar_adjust:
+        vmin, vmax = adjust_colorbar(map_data, **kwargs)
+        cmap = ax.imshow(map_data,vmin=vmin, vmax=vmax)
+    else:
+        cmap = ax.imshow(map_data)
     ax.set_axis_off()
     scalebar = AnchoredSizeBar(ax.transData, len_in_pix, str(length) + ' μm', 4, pad=1,
                                borderpad=0.1, sep=5, frameon=False, size_vertical=width, color='white',
@@ -792,14 +795,17 @@ def point_marker(map_data,original_data, YX,cbarlabel='Intensity / a.u.',frac_sc
     fmt = matplotlib.ticker.ScalarFormatter(useMathText=True)
     fmt.set_powerlimits((0, 0))
     cbar=fig.colorbar(cmap, ax=ax,format=fmt)
-    cbar.set_label(cbarlabel, fontsize=12, labelpad=10)
+    cbar.set_label(cbarlabel, fontsize=fontsize, labelpad=labelpad)
     plt.tight_layout()
     if save_path is not None:
         plt.savefig(save_path,transparent=True,dpi=300)
     plt.show()
 
 #%% Extract the spectrum at the points of interest and plot them on the same figure
-def Spectrum_extracted(original_data, YX, data_type,major_locator=50,n_minor_locator=2,processed_data=None,
+def Spectrum_extracted(original_data, YX, data_type,major_locator=50,n_minor_locator=2,
+                       fontsize=12,labelpad=10, labelsize=12,
+                       secondary_axis=False,
+                       processed_data=None,
                        x_lim=None,y_lim=None,spc_labels=None,save_path=None):
     """
     Plot the spectrum at the points of interest on the same figure
@@ -829,24 +835,25 @@ def Spectrum_extracted(original_data, YX, data_type,major_locator=50,n_minor_loc
             intensity = original_data.data[y, x, :]
         ax.plot(Spectr, intensity, color=colors[i], label=spc_labels[i])
     if data_type == 'PL':
-        ax.set_xlabel('Wavelength / nm', fontsize=12, labelpad=10)
-        secx = ax.secondary_xaxis('top', functions=(lambda Spectr: 1239.8 / Spectr, lambda Spectr: 1239.8 / Spectr))
-        secx.set_xlabel('Energy / eV', fontsize=12, labelpad=10)
-        secx.tick_params(which='both', direction='in', right=True, top=True)
+        ax.set_xlabel(f'{original_data.axes_manager[2].name} / {original_data.axes_manager[2].units}', fontsize=fontsize, labelpad=labelpad)
+        if secondary_axis:
+            secx = ax.secondary_xaxis('top', functions=(lambda Spectr: 1239.8 / Spectr, lambda Spectr: 1239.8 / Spectr))
+            secx.set_xlabel('Energy / eV', fontsize=fontsize, labelpad=labelpad)
+            secx.tick_params(which='both', direction='in', right=True, top=True, labelsize=labelsize)
         plt.gca().xaxis.set_major_locator(MultipleLocator(major_locator))
         plt.gca().xaxis.set_minor_locator(AutoMinorLocator(n_minor_locator))
-        plt.tick_params(which='both', direction='in', right=True, top=False)
+        plt.tick_params(which='both', direction='in', right=True, top=False, labelsize=labelsize)
     elif data_type == 'Raman':
-        ax.set_xlabel('Raman shift / cm$^{-1}$', fontsize=12, labelpad=10)
-        ax.tick_params(which='both', direction='in', right=True, top=True)
+        ax.set_xlabel('Raman shift / cm$^{-1}$', fontsize=fontsize, labelpad=labelpad)
+        ax.tick_params(which='both', direction='in', right=True, top=True, labelsize=labelsize)
         plt.gca().xaxis.set_major_locator(MultipleLocator(major_locator))
         plt.gca().xaxis.set_minor_locator(AutoMinorLocator(n_minor_locator))
-        plt.tick_params(which='both', direction='in', right=True, top=True)
+        plt.tick_params(which='both', direction='in', right=True, top=True, labelsize=labelsize)
     if x_lim is not None:
         ax.set_xlim(x_lim)
     if y_lim is not None:
         ax.set_ylim(y_lim)
-    ax.set_ylabel('{} intensity / a.u.'.format(data_type), fontsize=12, labelpad=10)
+    ax.set_ylabel('{} intensity / a.u.'.format(data_type), fontsize=fontsize, labelpad=labelpad)
     ax.legend()
     plt.tight_layout()
     if save_path is not None:
@@ -855,6 +862,8 @@ def Spectrum_extracted(original_data, YX, data_type,major_locator=50,n_minor_loc
 #%% Plot an average spectrum
 # TODO: single x axis, for PL either wavelength or energy, for Raman only Raman shift
 def avg_spectrum(data, data_type,major_locator=50,n_minor_locator=2,params_ROI=None,
+                 secondary_axis=False, sci_notation_y=True,
+                 fontsize=12,labelpad=10, labelsize=12,
                  savefig=False,figname=None,
                  savefile=False, filename=None, save_path=None):
     """
@@ -879,23 +888,23 @@ def avg_spectrum(data, data_type,major_locator=50,n_minor_locator=2,params_ROI=N
     ax.plot(Spectr, avg_intens)
     if data_type == 'PL':
         x_label = f'{data.axes_manager[2].name} / {data.axes_manager[2].units}'
-        def lambda2energy(Spectr):
-            return 1239.8 / Spectr
-
-        def energy2lambda(Spectr):
-            return 1239.8 / Spectr
-        secx=ax.secondary_xaxis('top', functions=(lambda2energy, energy2lambda))
-        secx.set_xlabel('Energy / eV', fontsize=12, labelpad=10)
-        secx.tick_params(which='both', direction='in', right=True, top=True)
+        if secondary_axis:
+            secx=ax.secondary_xaxis('top', functions=(lambda2energy, energy2lambda))
+            secx.set_xlabel('Energy / eV', fontsize=fontsize, labelpad=labelpad)
+            secx.tick_params(which='both', direction='in', right=True, top=True, labelsize=labelsize)
         ax.xaxis.set_major_locator(MultipleLocator(major_locator))
         ax.xaxis.set_minor_locator(AutoMinorLocator(n_minor_locator))
     elif data_type == 'Raman':
         x_label = 'Raman shift / cm$^{-1}$'
         ax.xaxis.set_major_locator(MultipleLocator(major_locator))
         ax.xaxis.set_minor_locator(AutoMinorLocator(n_minor_locator))
-    ax.set_xlabel(x_label, fontsize=12, labelpad=10)
-    ax.set_ylabel('{} intensity / a.u.'.format(data_type), fontsize=12, labelpad=10)
-    ax.tick_params(which='both', direction='in', right=True, top=False)
+    ax.set_xlabel(x_label, fontsize=fontsize, labelpad=labelpad)
+    fmt = matplotlib.ticker.ScalarFormatter(useMathText=True)
+    fmt.set_powerlimits((0, 0))
+    ax.set_ylabel('{} intensity / a.u.'.format(data_type), fontsize=fontsize, labelpad=labelpad)
+    ax.tick_params(which='both', direction='in', right=True, top=True, labelsize=labelsize)
+    if sci_notation_y:
+        plt.ticklabel_format(axis='y', style='sci', scilimits=(0,0))
     plt.tight_layout()
     if savefig:
         if figname is None:
@@ -912,7 +921,11 @@ def avg_spectrum(data, data_type,major_locator=50,n_minor_locator=2,params_ROI=N
 
 #%% Compare the spectra on the same figure, for example, the average spectrum before & after illumination
 def plot_spectra(spc_list, wl_list, data_type, xlim=None,ylim=None,label_list=None,
-                 major_locator=50,n_minor_locator=2,secondary_axis=True,save_path=None):
+                 text=False,text_coords=None,
+                 major_locator=50,n_minor_locator=2,sci_notation_y=False,
+                 fontsize=12,labelpad=10, labelsize=12,
+                 colorstyle='default',
+                 secondary_axis=False,save_path=None):
     """
     Plot two spectra on the same figure
     :param spc_list (list): the list of the spectra
@@ -937,44 +950,63 @@ def plot_spectra(spc_list, wl_list, data_type, xlim=None,ylim=None,label_list=No
         for wl in wl_list:
             x_range.append([0, len(wl)-1])
     fig, ax = plt.subplots()
+    plt.style.use(colorstyle)  # set the color style
     for i in range(len(spc_list)):
-        if label_list is not None:
-            ax.plot(wl_list[i][x_range[i][0]:x_range[i][1]], spc_list[i][x_range[i][0]:x_range[i][1]], label=label_list[i])
-        else:
             ax.plot(wl_list[i][x_range[i][0]:x_range[i][1]], spc_list[i][x_range[i][0]:x_range[i][1]])
     if data_type == 'PL':
         x_label = 'Wavelength / nm'
         if secondary_axis:
-            def lambda2energy(Spectr):
-                return 1239.8 / Spectr
-
-            def energy2lambda(Spectr):
-                return 1239.8 / Spectr
             secx = ax.secondary_xaxis('top', functions=(lambda2energy, energy2lambda))
-            secx.set_xlabel('Energy / eV', fontsize=12, labelpad=10)
-            secx.tick_params(which='both', direction='in', right=True, top=True)
+            secx.set_xlabel('Energy / eV', fontsize=fontsize, labelpad=labelpad)
+            secx.tick_params(which='both', direction='in', right=True, top=True, labelsize=labelsize)
     elif data_type == 'Raman':
         x_label = 'Raman shift / cm$^{-1}$'
-    ax.set_xlabel(x_label, fontsize=12, labelpad=10)
-    ax.set_ylabel('{} intensity / a.u.'.format(data_type), fontsize=12, labelpad=10)
-    ax.tick_params(which='both', direction='in', right=True, top=True)
+    ax.set_xlabel(x_label, fontsize=fontsize, labelpad=labelpad)
+    ax.set_ylabel('{} intensity / a.u.'.format(data_type), fontsize=fontsize, labelpad=labelpad)
+    ax.tick_params(which='both', direction='in', right=True, top=True, labelsize=labelsize)
     ax.xaxis.set_major_locator(MultipleLocator(major_locator))
     ax.xaxis.set_minor_locator(AutoMinorLocator(n_minor_locator))
-    if xlim is not None:
-        ax.set_xlim(xlim)
+    if sci_notation_y:
+        plt.ticklabel_format(axis='y', style='sci', scilimits=(0, 0))
+    if text:
+        if label_list is None:
+            print('Please provide the labels for the spectra')
+        if text_coords is None:
+            print('Please provide the coordinates for the text')
+        for i in range(len(spc_list)):
+            ax.text(text_coords[i][0], text_coords[i][1], label_list[i], transform=ax.transAxes,
+                    fontsize=labelsize, va='bottom', ha='center',color=ax.lines[i].get_color())
     if ylim is not None:
         ax.set_ylim(ylim)
-    if label_list is not None:
-        plt.legend()
     plt.tight_layout()
     if save_path is not None:
         plt.savefig(save_path,transparent=True,dpi=300)
     plt.show()
+#%% crop hyperspectral data by given ROI
+def crop_hsdata(original_data, ROI):
+    """
+    Crop the hyperspectral data by given ROI
+    :param original_data (LumiSpectrum): the original hyperspectral data read by Hyperspy
+    :param ROI (tuple)(optional): the region of interest (ROI) in the format (x, y, width, height)
+    :return: cropped_data (LumiSpectrum): the cropped hyperspectral data
+    """
+    cropped_hsdata = original_data.copy()  # make a copy of the original data to avoid modifying it
+    x, y, width, height = ROI
+    cropped_hsdata.data = original_data.data[y:y+height, x:x+width, :]
+    # update the axes manager to reflect the new shape
+    cropped_hsdata.axes_manager[0].size = height
+    cropped_hsdata.axes_manager[1].size = width
+    cropped_hsdata.axes_manager[0].axis = cropped_hsdata.axes_manager[0].axis[y:y+height]
+    cropped_hsdata.axes_manager[1].axis = cropped_hsdata.axes_manager[1].axis[x:x+width]
+
+    return cropped_hsdata
 #%% Find local maxima in the spectrum based on scipy.signal.find_peaks
 import scipy.signal as signal
 
 def find_maxima(original_data, spectrum_data, data_type,
-                major_locator=50,n_minor_locator=2,save_path=None,
+                major_locator=50,n_minor_locator=2, secondary_axis=False,
+                fontsize=12,labelpad=10, labelsize=12,
+                save_path=None,
                 *args, **kwargs):
     """
     Find the maxima in the average spectrum
@@ -992,26 +1024,22 @@ def find_maxima(original_data, spectrum_data, data_type,
     plt.plot(original_data.axes_manager[2].axis, spectrum_data)
     plt.plot(pps, pint, 'x', label='Maxima')
     for p in range(len(pps)):
-        plt.text(pps[p], pint[p]+2, np.round(pps[p]), fontsize=10, rotation='vertical', va='bottom', ha='center')
+        plt.text(pps[p], pint[p]+2, np.round(pps[p]), fontsize=fontsize, rotation='vertical', va='bottom', ha='center')
     if data_type == 'PL':
-        x_label = 'Wavelength / nm'
-        def lambda2energy(Spectr):
-            return 1239.8 / Spectr
-
-        def energy2lambda(Spectr):
-            return 1239.8 / Spectr
-        secx = plt.gca().secondary_xaxis('top', functions=(lambda2energy, energy2lambda))
-        secx.set_xlabel('Energy / eV', fontsize=12, labelpad=10)
-        secx.tick_params(which='both', direction='in', right=True, top=True)
+        x_label = f'{original_data.axes_manager[2].name} / {original_data.axes_manager[2].units}'
+        if secondary_axis:
+            secx = plt.gca().secondary_xaxis('top', functions=(lambda2energy, energy2lambda))
+            secx.set_xlabel('Energy / eV', fontsize=fontsize, labelpad=labelpad)
+            secx.tick_params(which='both', direction='in', right=True, top=True, labelsize=labelsize)
         plt.gca().xaxis.set_major_locator(MultipleLocator(major_locator))
         plt.gca().xaxis.set_minor_locator(AutoMinorLocator(n_minor_locator))
     elif data_type == 'Raman':
         x_label = 'Raman shift / cm$^{-1}$'
         plt.gca().xaxis.set_major_locator(MultipleLocator(major_locator))
         plt.gca().xaxis.set_minor_locator(AutoMinorLocator(n_minor_locator))
-    plt.xlabel(x_label, fontsize=12, labelpad=10)
-    plt.ylabel('{} intensity / a.u.'.format(data_type), fontsize=12, labelpad=10)
-    plt.tick_params(which='both', direction='in', right=True, top=True)
+    plt.xlabel(x_label, fontsize=fontsize, labelpad=labelpad)
+    plt.ylabel('{} intensity / a.u.'.format(data_type), fontsize=fontsize, labelpad=labelpad)
+    plt.tick_params(which='both', direction='in', right=True, top=True, labelsize=labelsize)
     plt.tight_layout()
     if save_path is not None:
         plt.savefig(save_path,transparent=True,dpi=300)
@@ -1020,7 +1048,8 @@ def find_maxima(original_data, spectrum_data, data_type,
 
 #%% Plot histogram(s) of the 2d map data
 import scipy.stats as stats
-def plot_hist(dataMap, labels=None, spread=True, bins=100, bins_range=None, x_label='Intensity / a.u.', save_path=None):
+def plot_hist(dataMap, labels=None, colorstyle='default',
+              spread=True, bins=100, bins_range=None, x_label='Intensity / a.u.', save_path=None):
     """
     Plot histogram(s) of the 2D map data
     :param dataMap (np.ndarray or list): the 2D map data or a list of 2D map data
@@ -1032,8 +1061,8 @@ def plot_hist(dataMap, labels=None, spread=True, bins=100, bins_range=None, x_la
     :param save_path (str)(optional): the path to save the figure
     """
     # check if the dataMap is a list
-    colors = ['r', 'b', 'g', 'c', 'm', 'y', 'k']
     fig, ax = plt.subplots()
+    plt.style.use(colorstyle)  # set the color style
     if isinstance(dataMap,list):
         for i in range(len(dataMap)):
             mean, std = stats.norm.fit(dataMap[i].flatten())
@@ -1042,11 +1071,11 @@ def plot_hist(dataMap, labels=None, spread=True, bins=100, bins_range=None, x_la
             else:
                 Range = (dataMap[i].flatten().min(), dataMap[i].flatten().max())
             if spread:
-                ax.hist(dataMap[i].flatten(), bins=bins, range=Range, color=colors[i], alpha=0.5, label=labels[i]+': mean={:.1f}, std={:.1f}'.format(mean, std))
                 # plot the corresponding normal distribution
                 x = np.linspace(Range[0], Range[1], bins)
                 y = stats.norm.pdf(x, mean, std)
-                ax.plot(x, y, color=colors[i])
+                ax.plot(x, y)
+                ax.hist(dataMap[i].flatten(), bins=bins, range=Range, color=ax.lines[i].get_color(), alpha=0.5, label=labels[i]+': mean={:.1f}, std={:.1f}'.format(mean, std))
             else:
                 ax.hist(dataMap[i].flatten(), bins=bins, range=Range, color=colors[i], alpha=0.5, label=labels[i])
     else:
@@ -1056,11 +1085,11 @@ def plot_hist(dataMap, labels=None, spread=True, bins=100, bins_range=None, x_la
         else:
             Range = (dataMap.flatten().min(), dataMap.flatten().max())
         if spread:
-            ax.hist(dataMap.flatten(), bins=bins, range=Range, color=colors[0], alpha=0.5, label=labels+': mean={:.1f}, std={:.1f}'.format(mean, std))
             # plot the corresponding normal distribution
             x = np.linspace(Range[0], Range[1], bins)
             y = stats.norm.pdf(x, mean, std)
-            ax.plot(x, y, color=colors[0])
+            ax.plot(x, y)
+            ax.hist(dataMap.flatten(), bins=bins, range=Range, color=ax.lines[0].get_color(), alpha=0.5, label=labels+': mean={:.1f}, std={:.1f}'.format(mean, std))
         else:
             ax.hist(dataMap.flatten(), bins=bins, range=Range, color=colors[0], alpha=0.5, label=labels)
     ax.set_xlabel(x_label, fontsize=12, labelpad=10)
