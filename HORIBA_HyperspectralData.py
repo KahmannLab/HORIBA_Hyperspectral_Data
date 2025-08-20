@@ -5,6 +5,7 @@ import matplotlib.ticker
 from matplotlib.ticker import MultipleLocator, AutoMinorLocator
 import os
 from mpl_toolkits.axes_grid1.anchored_artists import AnchoredSizeBar
+import copy
 #%% extract the xml file paths
 def xml_paths(folder_path, endswith='.xml', IDs=None):
     """
@@ -576,7 +577,7 @@ def jacobian_conversion(hsdata, copy=False, rewrite=False):
     # Convert the intensity using the Jacobian conversion
     intensity = hsdata.data / energy_axis[None,None,:] **2
     if copy:
-        hsdata_new = hsdata.copy()
+        hsdata_new = copy.deepcopy(hsdata)
         hsdata_new.data = intensity
         # renew the metadata
         hsdata_new.axes_manager[2].name = 'Energy'
@@ -1074,15 +1075,23 @@ def crop_hsdata(original_data, ROI):
     :param ROI (tuple)(optional): the region of interest (ROI) in the format (x, y, width, height)
     :return: cropped_data (LumiSpectrum): the cropped hyperspectral data
     """
+    x, y, width, height = ROI
+    left_in_um = original_data.axes_manager[0].axis[x]
+    top_in_um = original_data.axes_manager[1].axis[y]
+    right_in_um = original_data.axes_manager[0].axis[x + width]
+    bottom_in_um = original_data.axes_manager[1].axis[y + height]
+    roi = hs.roi.RectangularROI(top=top_in_um, bottom=bottom_in_um, left=left_in_um, right=right_in_um)
+    cropped_hsdata = roi(original_data)
+    """
     cropped_hsdata = original_data.copy()  # make a copy of the original data to avoid modifying it
     x, y, width, height = ROI
-    cropped_hsdata.data = original_data.data[y:y+height, x:x+width, :]
+    cropped_hsdata.data = cropped_hsdata.data[y:y+height, x:x+width, :]
     # update the axes manager to reflect the new shape
     cropped_hsdata.axes_manager[0].size = height
     cropped_hsdata.axes_manager[1].size = width
     cropped_hsdata.axes_manager[0].axis = cropped_hsdata.axes_manager[0].axis[y:y+height]
     cropped_hsdata.axes_manager[1].axis = cropped_hsdata.axes_manager[1].axis[x:x+width]
-
+    """
     return cropped_hsdata
 #%% Find local maxima in the spectrum based on scipy.signal.find_peaks
 import scipy.signal as signal
