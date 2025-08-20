@@ -28,7 +28,9 @@ def unstack_spectra_columnwise(flat, ny, nx):
 #%%
 from sklearn.decomposition import PCA
 
-def sklearn_PCA(data,ScreePlot=False,n_PCs=None,*args, **kwargs):
+def sklearn_PCA(data,ScreePlot=False,n_PCs=None,
+                saveplot=False, figname=None, savepath=None,
+                *args, **kwargs):
     # flatten the datacube read by hyperspy
     flat_data = stack_spectra_columnwise(data.data)
     # apply PCA
@@ -54,6 +56,17 @@ def sklearn_PCA(data,ScreePlot=False,n_PCs=None,*args, **kwargs):
         plt.yscale('log')
         plt.title('Explained variance ratio by PCA')
         plt.tight_layout()
+        if saveplot:
+            if figname is None:
+                print("Warning: No figure name provided, using default 'PCA_scree_plot'.")
+                savename = 'PCA_scree_plot'
+            else:
+                savename = figname
+            if savepath is not None:
+                plt.savefig(savepath+savename+'.png', transparent=True, dpi=300)
+            else:
+                plt.savefig(savename+'.png', transparent=True, dpi=300)
+                print("Warning: No save path provided, saving in the current directory.")
         plt.show()
 
     return pca, component_spectra
@@ -141,7 +154,10 @@ def reconstruct_data(data, pca, component_idx=None, component_list=None):
     # Reconstruct data
     data_reconstructed = np.dot(data_pca_sel, components_sel) + pca.mean_
     datacube_reconstructed = unstack_spectra_columnwise(data_reconstructed, data.data.shape[0], data.data.shape[1])
-    return datacube_reconstructed
+
+    rec_data = data.copy()
+    rec_data.data = datacube_reconstructed
+    return rec_data
 
 #%% Score map
 # get the ideal scalebar length
