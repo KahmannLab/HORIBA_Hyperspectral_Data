@@ -124,13 +124,14 @@ def reconstruct_data(data, pca, component_idx=None, component_list=None):
        Reconstruct data from PCA scores using a subset of components.
 
        Parameters:
+              data : LumiSpectrum object
            pca : trained sklearn PCA object
            X_pca : array-like, shape (n_samples, n_components)
                PCA-transformed data (scores)
-           n_first : int, optional
-               Number of first components to use (indices 0 to n_first-1)
+            component_idx : int, optional
+                   Number of components to use
            component_list : list of int, optional
-               Specific component indices to use
+               Specific component indices to use counting from 1
 
        Returns:
            X_reconstructed : array-like, shape (n_samples, n_features)
@@ -143,7 +144,7 @@ def reconstruct_data(data, pca, component_idx=None, component_list=None):
         selected_indices = list(range(component_idx))
     elif component_list is not None:
         # Select specific components
-        selected_indices = component_list
+        selected_indices = [comp - 1 for comp in component_list]  # Convert to zero-based index
     else:
         raise ValueError("Either the index of component or component_list must be provided.")
 
