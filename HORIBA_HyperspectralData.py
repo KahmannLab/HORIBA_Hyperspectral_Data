@@ -559,8 +559,34 @@ def triple_gaussian(x, amp1, cen1, wid1, amp2, cen2, wid2, amp3, cen3, wid3):
     return (amp1 * np.exp(-(x - cen1)**2 / (2 * wid1**2)) +
             amp2 * np.exp(-(x - cen2)**2 / (2 * wid2**2)) +
             amp3 * np.exp(-(x - cen3)**2 / (2 * wid3**2)))
+#%% jacobian conversion for the spectral data
+def jacobian_conversion(data, wl,ylabel='PL intensity / a.u.',plot=False):
+    """
+    Convert the wavelength axis of the spectral data to energy axis, and also convert the intensity using the Jacobian conversion
+    Note that h*c is ignored in the conversion, so the intensity is not in absolute units.
+    :param data (LumiSpectrum): the spectral data
+    :return: data3d (np.ndarray): the spectral data with the energy axis and converted intensity
+             energy_axis (np.ndarray): the energy axis of the spectral data
+    """
+    # Convert the wavelength axis to energy axis
+    h = 6.62607015e-34  # Planck constant in J.s
+    c = 3.0e8  # Speed of light in m/s
+    eV = 1.602176634e-19  # 1 eV in J
+    energy_axis = h * c / (wl * 1e-9) / eV
+    # Convert the intensity using the Jacobian conversion
+    intensity = data / energy_axis**2
+    spectrum_converted = [energy_axis, intensity]
+    if plot:
+        plt.figure(figsize=(8, 6))
+        plt.plot(energy_axis, intensity)
+        plt.xlabel('Energy / eV')
+        plt.ylabel(ylabel)
+        plt.tight_layout()
+        plt.show()
+
+    return spectrum_converted
 #%% Jacobian conversion for the hyperspectral data
-def jacobian_conversion(hsdata, copy=False, rewrite=False):
+def jacobian_conversion_hsdata(hsdata, copy=False, rewrite=False):
     """
     Convert the wavelength axis of the hyperspectral data to energy axis, and also convert the intensity using the Jacobian conversion
     Note that h*c is ignored in the conversion, so the intensity is not in absolute units.
@@ -606,7 +632,7 @@ def gaussian_fit(data, jacobian=False, func_name='triple_gaussian',initial_guess
                 errors (np.ndarray): the errors of the Gaussian parameters
     """
     if jacobian:
-        spectra, energy_axis = jacobian_conversion(data, copy=False, rewrite=False)
+        spectra, energy_axis = jacobian_conversion_hsdata(data, copy=False, rewrite=False)
     else:
         spectra = data.data
         energy_axis = data.axes_manager[2].axis
@@ -648,7 +674,7 @@ def plot_gaussian_fit(data, params, jacobian=False, func_name='triple_gaussian',
     :return: None
     """
     if jacobian:
-        spectra, x_axis = jacobian_conversion(data, copy=False, rewrite=False)
+        spectra, x_axis = jacobian_conversion_hsdata(data, copy=False, rewrite=False)
     else:
         spectra = data.data
         x_axis = data.axes_manager[2].axis
@@ -700,7 +726,9 @@ def plot_gaussian_fit(data, params, jacobian=False, func_name='triple_gaussian',
     return None
 #%% Step2: Plot the integrated intensity map of the individual Gaussian peak over the entire spectral range
 from scipy import integrate
-def plot_intint_gaussian(original_data,params,cbar_label='PL integrated intensity / a.u.',cbar_adj=True, ROI=None,
+def plot_intint_gaussian(original_data,params,cbar_label='PL integrated intensity / a.u.',
+                         jacobian=False,
+                         cbar_adj=True, ROI=None,
                          frac_scalebar=0.133335,
                          fontsize=12,labelpad=10,
                          sum_threshold=None,save_path=None,
@@ -717,6 +745,11 @@ def plot_intint_gaussian(original_data,params,cbar_label='PL integrated intensit
     # Initialize intensity maps for each Gaussian
     wls = original_data.axes_manager[2].axis
     map_shape = original_data.data.shape
+    if jacobian:
+        _, wls = jacobian_conversion_hsdata(original_data, copy=False, rewrite=False)
+        # flip the wls axis if it is in descending order
+        if wls[0] > wls[-1]:
+            wls = wls[::-1]
     intint_gaussian = np.zeros(map_shape[:2])
     # Loop through each pixel in the spatial dimensions
     for i in range(map_shape[0]):
@@ -837,11 +870,67 @@ def coord_extract(map_data, value='max'):
     elif value == 'median':
         coord = np.unravel_index(np.argsort(map_data, axis=None)[map_data.size // 2], map_data.shape)
     return coord
+#%% Interactive point selection on a 2D map
+import sys
+import matplotlib as mpl
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.figure import Figure
+from PyQt5.QtWidgets import QApplication
+def select_point(data):
+    """
+    Display a 2D array with matplotlib and let the user click one or more points.
 
+    Parameters
+    ----------
+    data : np.ndarray
+        2D array representing the map.
+    cmap : str
+        Colormap for imshow.
+
+    Returns
+    -------
+    list of (int, int)
+        List of (col, row) pixel coordinates in order of clicking.
+        If only one point is clicked, a list with single [(col, row)] tuple is returned.
+    """
+    vmin, vmax = adjust_colorbar(data)
+
+    # Ensure a Qt application exists
+    app = QApplication.instance()
+    if app is None:
+        app = QApplication(sys.argv)
+
+    # Create figure and canvas
+    fig = Figure()
+    canvas = FigureCanvas(fig)
+    ax = fig.add_subplot(111)
+    cax = ax.imshow(data, vmin=vmin, vmax=vmax, cmap='viridis')
+    fig.colorbar(cax)
+    ax.set_title("Click points (Press Enter or right-click to finish)")
+
+    # Show the figure
+    canvas.show()
+
+    # ginput waits for clicks on this figure
+    pts = fig.ginput(0, timeout=0)
+
+    # Close the figure
+    canvas.close()
+    fig.clear()
+
+    if not pts:
+        print("No points selected.")
+        return None
+
+    # Convert to integer pixel coordinates
+    coords = [(int(round(x)), int(round(y))) for x, y in pts]
+    print(f"Selected pixel: {coords}")
+    return coords
 #%% Mark points of interest on the map
-def point_marker(map_data,original_data, YX,cbarlabel='Intensity / a.u.',frac_scalebar=0.133335,
-                 fontsize=12,labelpad=10,
-                 cbar_adjust=True,save_path=None,
+def point_marker(map_data,original_data, XY,cbarlabel='Intensity / a.u.',frac_scalebar=0.133335,
+                 fontsize=12,labelpad=10,colorseq='Dark2',colors_udef=None,
+                 cbar_adjust=True,cbar_sci_notation=True,
+                 save_path=None,
                  **kwargs):
     """
     Mark the points of interest on the map
@@ -852,6 +941,9 @@ def point_marker(map_data,original_data, YX,cbarlabel='Intensity / a.u.',frac_sc
     :param save_path (str)(optional): the path to save the figure
     """
     # define scalebar
+    colors = mpl.color_sequences[colorseq]  # use the color sequence from matplotlib
+    if colors_udef is not None:
+        colors = colors_udef
     len_in_pix, length, width = get_scalebar_length(map_data, original_data.axes_manager[0].scale,
                                                      percent=frac_scalebar)
     fig,ax = plt.subplots()
@@ -865,12 +957,15 @@ def point_marker(map_data,original_data, YX,cbarlabel='Intensity / a.u.',frac_sc
                                borderpad=0.1, sep=5, frameon=False, size_vertical=width, color='white',
                                fontproperties={'size': 15, 'weight': 'bold'})
     ax.add_artist(scalebar)
-    colors = ['m', 'k', 'b', 'r', 'c', 'g']
-    for i in range(len(YX)):
-        ax.plot(YX[i][1], YX[i][0], 'o', mfc='none', mec=colors[i],mew=3, markersize=15)
+    #colors = ['m', 'k', 'b', 'r', 'c', 'g']
+    for i in range(len(XY)):
+        ax.plot(XY[i][0], XY[i][1], 'o', mfc='none', mec=colors[i],mew=3, markersize=15)
     fmt = matplotlib.ticker.ScalarFormatter(useMathText=True)
     fmt.set_powerlimits((0, 0))
-    cbar=fig.colorbar(cmap, ax=ax,format=fmt)
+    if cbar_sci_notation:
+        cbar=fig.colorbar(cmap, ax=ax,format=fmt)
+    else:
+        cbar=fig.colorbar(cmap, ax=ax)
     cbar.set_label(cbarlabel, fontsize=fontsize, labelpad=labelpad)
     plt.tight_layout()
     if save_path is not None:
@@ -878,67 +973,70 @@ def point_marker(map_data,original_data, YX,cbarlabel='Intensity / a.u.',frac_sc
     plt.show()
 
 #%% Extract the spectrum at the points of interest and plot them on the same figure
-def Spectrum_extracted(original_data, YX, data_type,major_locator=50,n_minor_locator=2,
+def Spectrum_extracted(original_data, XY, data_type,
+                       jacobian=False, xlabel_PL='Wavelength / nm',
+                       major_locator=50,n_minor_locator=2,
                        fontsize=12,labelpad=10, labelsize=12,
-                       secondary_axis=False,
-                       processed_data=None,
-                       x_lim=None,y_lim=None,spc_labels=None,save_path=None):
+                       sci_notation_y=False,
+                       colorseq='Dark2', colors_udef=None,
+                       x_lim=None,y_lim=None,save_path=None):
     """
     Plot the spectrum at the points of interest on the same figure
-    :param original_data (LumiSpectrum): hyperspectral data read by Hyperspy used to provide the spectral axis information
-    :param YX (list): the list of the coordinates of the points of interest (Y,X)
+    :param original_data (LumiSpectrum): hyperspectral data read by Hyperspy
+    :param XY (tuple or list): the coordinates of the points of interest (X, Y) or the list of the coordinates of the points of interest (X,Y)
     :param data_type (str): the type of the data, either 'PL' or 'Raman'
-    :param processed_data (np.ndarray)(optional): the registered (and reconstructed) data after data preprocessing
     :param x_lim (list)(optional): the x limit of the plot
     :param y_lim (list)(optional): the y limit of the plot
     :return: fig (matplotlib.figure.Figure): the figure object,
                 ax (matplotlib.axes._axes.Axes): the axes object
     """
-    if spc_labels is None:
-        # create a list of None with the same length as YX
-        spc_labels = [None] * len(YX)
-    else:
-        spc_labels = spc_labels
-    colors = ['m', 'k', 'b', 'r', 'c', 'g'] # set the color map, here we use the RdPu colormap
+    colors = mpl.color_sequences[colorseq]
+    Spectr = original_data.axes_manager[2].axis
+    intensities = original_data.data
+    if x_lim is not None:
+        x1 = np.argmin(np.abs(Spectr - x_lim[0]))
+        x2 = np.argmin(np.abs(Spectr - x_lim[1]))
+        Spectr = Spectr[x1:x2]
+        intensities = intensities[:,:,x1:x2]
+    if colors_udef is not None:
+        colors = colors_udef
+    if not isinstance(XY, list):
+        XY = [XY]
+    #colors = ['orange', 'k', 'b', 'r', 'c', 'g'] # set the color map, here we use the RdPu colormap
     fig, ax = plt.subplots()
-    for i in range(len(YX)):
-        x = YX[i][1]
-        y = YX[i][0]
-        Spectr = original_data.axes_manager[2].axis
-        if processed_data is not None:
-            intensity = processed_data[y, x, :]
-        else:
-            intensity = original_data.data[y, x, :]
-        ax.plot(Spectr, intensity, color=colors[i], label=spc_labels[i])
+    for i in range(len(XY)):
+        x = XY[i][0]
+        y = XY[i][1]
+        intensity = intensities[y, x, :]
+        if jacobian:
+            Spectr, intensity = jacobian_conversion(intensity, Spectr, plot=False)
+        ax.plot(Spectr, intensity, color=colors[i])
     if data_type == 'PL':
-        ax.set_xlabel(f'{original_data.axes_manager[2].name} / {original_data.axes_manager[2].units}', fontsize=fontsize, labelpad=labelpad)
-        if secondary_axis:
-            secx = ax.secondary_xaxis('top', functions=(lambda Spectr: 1239.8 / Spectr, lambda Spectr: 1239.8 / Spectr))
-            secx.set_xlabel('Energy / eV', fontsize=fontsize, labelpad=labelpad)
-            secx.tick_params(which='both', direction='in', right=True, top=True, labelsize=labelsize)
+        ax.set_xlabel(xlabel_PL,
+                      fontsize=fontsize, labelpad=labelpad)
         plt.gca().xaxis.set_major_locator(MultipleLocator(major_locator))
         plt.gca().xaxis.set_minor_locator(AutoMinorLocator(n_minor_locator))
-        plt.tick_params(which='both', direction='in', right=True, top=False, labelsize=labelsize)
+        plt.tick_params(which='both', direction='in', right=True, top=True, labelsize=labelsize)
     elif data_type == 'Raman':
         ax.set_xlabel('Raman shift / cm$^{-1}$', fontsize=fontsize, labelpad=labelpad)
         ax.tick_params(which='both', direction='in', right=True, top=True, labelsize=labelsize)
         plt.gca().xaxis.set_major_locator(MultipleLocator(major_locator))
         plt.gca().xaxis.set_minor_locator(AutoMinorLocator(n_minor_locator))
         plt.tick_params(which='both', direction='in', right=True, top=True, labelsize=labelsize)
-    if x_lim is not None:
-        ax.set_xlim(x_lim)
     if y_lim is not None:
         ax.set_ylim(y_lim)
     ax.set_ylabel('{} intensity / a.u.'.format(data_type), fontsize=fontsize, labelpad=labelpad)
-    if len(YX) > 1:
-        ax.legend()
+    if sci_notation_y:
+        plt.ticklabel_format(axis='y', style='sci', scilimits=(0, 0))
     plt.tight_layout()
     if save_path is not None:
         plt.savefig(save_path,transparent=True,dpi=300)
     plt.show()
 #%% Plot an average spectrum
-def avg_spectrum(data, data_type,major_locator=50,n_minor_locator=2,params_ROI=None,
-                 secondary_axis=False, sci_notation_y=True,
+def avg_spectrum(data, data_type,
+                 jacobian=False, xlabel_PL='Wavelength / nm',
+                 major_locator=50,n_minor_locator=2,params_ROI=None,
+                 sci_notation_y=True,
                  xlim=None, ylim=None,
                  fontsize=12,labelpad=10, labelsize=12,
                  savefig=False,figname=None,
@@ -968,13 +1066,11 @@ def avg_spectrum(data, data_type,major_locator=50,n_minor_locator=2,params_ROI=N
         avg_intens = avg_intens[x1:x2]
 
     fig, ax = plt.subplots()
+    if jacobian:
+        Spectr, avg_intens = jacobian_conversion(avg_intens, Spectr, plot=False)
     ax.plot(Spectr, avg_intens)
     if data_type == 'PL':
-        x_label = f'{data.axes_manager[2].name} / {data.axes_manager[2].units}'
-        if secondary_axis:
-            secx=ax.secondary_xaxis('top', functions=(lambda2energy, energy2lambda))
-            secx.set_xlabel('Energy / eV', fontsize=fontsize, labelpad=labelpad)
-            secx.tick_params(which='both', direction='in', right=True, top=True, labelsize=labelsize)
+        x_label = xlabel_PL
         ax.xaxis.set_major_locator(MultipleLocator(major_locator))
         ax.xaxis.set_minor_locator(AutoMinorLocator(n_minor_locator))
     elif data_type == 'Raman':
@@ -1005,12 +1101,14 @@ def avg_spectrum(data, data_type,major_locator=50,n_minor_locator=2,params_ROI=N
     return avg_intens
 
 #%% Compare the spectra on the same figure, for example, the average spectrum before & after illumination
-def plot_spectra(spc_list, wl_list, data_type, xlim=None,ylim=None,label_list=None,
+def plot_spectra(spc_list, wl_list, data_type,
+                 jacobian=False,xlabel_PL='Wavelength / nm',
+                 xlim=None,ylim=None,label_list=None,
                  text=False,text_coords=None,
                  major_locator=50,n_minor_locator=2,sci_notation_y=False,
                  fontsize=12,labelpad=10, labelsize=12,
                  colorstyle='default',
-                 secondary_axis=False,save_path=None):
+                 save_path=None):
     """
     Plot two spectra on the same figure
     :param spc_list (list): the list of the spectra
@@ -1025,25 +1123,21 @@ def plot_spectra(spc_list, wl_list, data_type, xlim=None,ylim=None,label_list=No
     :param save_path (str)(optional): the path to save the figure
     :return:
     """
-    x_range = []
     if xlim:
         for wl in wl_list:
             x1 = np.argmin(np.abs(wl - xlim[0]))
             x2 = np.argmin(np.abs(wl - xlim[1]))
-            x_range.append([x1, x2])
-    else:
-        for wl in wl_list:
-            x_range.append([0, len(wl)-1])
+            wl_list[wl_list.index(wl)] = wl[x1:x2]
+            spc_list[wl_list.index(wl)] = spc_list[wl_list.index(wl)][x1:x2]
+
     fig, ax = plt.subplots()
     plt.style.use(colorstyle)  # set the color style
     for i in range(len(spc_list)):
-            ax.plot(wl_list[i][x_range[i][0]:x_range[i][1]], spc_list[i][x_range[i][0]:x_range[i][1]])
+        if jacobian:
+            wl_list[i],spc_list[i] = jacobian_conversion(spc_list[i], wl_list[i], plot=False)
+        ax.plot(wl_list[i], spc_list[i])
     if data_type == 'PL':
-        x_label = 'Wavelength / nm'
-        if secondary_axis:
-            secx = ax.secondary_xaxis('top', functions=(lambda2energy, energy2lambda))
-            secx.set_xlabel('Energy / eV', fontsize=fontsize, labelpad=labelpad)
-            secx.tick_params(which='both', direction='in', right=True, top=True, labelsize=labelsize)
+        x_label = xlabel_PL
     elif data_type == 'Raman':
         x_label = 'Raman shift / cm$^{-1}$'
     ax.set_xlabel(x_label, fontsize=fontsize, labelpad=labelpad)
@@ -1082,16 +1176,6 @@ def crop_hsdata(original_data, ROI):
     bottom_in_um = original_data.axes_manager[1].axis[y + height]
     roi = hs.roi.RectangularROI(top=top_in_um, bottom=bottom_in_um, left=left_in_um, right=right_in_um)
     cropped_hsdata = roi(original_data)
-    """
-    cropped_hsdata = original_data.copy()  # make a copy of the original data to avoid modifying it
-    x, y, width, height = ROI
-    cropped_hsdata.data = cropped_hsdata.data[y:y+height, x:x+width, :]
-    # update the axes manager to reflect the new shape
-    cropped_hsdata.axes_manager[0].size = height
-    cropped_hsdata.axes_manager[1].size = width
-    cropped_hsdata.axes_manager[0].axis = cropped_hsdata.axes_manager[0].axis[y:y+height]
-    cropped_hsdata.axes_manager[1].axis = cropped_hsdata.axes_manager[1].axis[x:x+width]
-    """
     return cropped_hsdata
 #%% Find local maxima in the spectrum based on scipy.signal.find_peaks
 import scipy.signal as signal
@@ -1117,6 +1201,7 @@ def find_maxima(original_data, spectrum_data, data_type,
         x1 = np.argmin(np.abs(spectral_axis - xlim[0]))
         x2 = np.argmin(np.abs(spectral_axis - xlim[1]))
         spectral_axis = spectral_axis[x1:x2]
+        spectrum_data = spectrum_data[x1:x2]
     peaks, _ = signal.find_peaks(spectrum_data, *args, **kwargs)
     pps = np.array(spectral_axis[peaks])  # peak positions
     pint = np.array(spectrum_data[peaks])  # peak intensity
