@@ -93,6 +93,26 @@ def visual_data(data, xlabel='Wavelength / nm', ylabel='PL intensity / a.u.',
         else:
             plt.savefig(savepath+figname+'.png', transparent=True, dpi=300)
     plt.show()
+
+def normalize_data(data, norm_type='max',rewrite=False):
+    """
+    Normalize the hyperspectral data based on the given normalization type
+    :param data (LumiSpectrum): the hyperspectral data
+    :param norm_type (str): the type of normalization, either 'max' or 'sum'
+    :return: data (LumiSpectrum): the normalized hyperspectral data
+    """
+    if rewrite:
+        norm_data = data
+    else:
+        # create a copy of the data to avoid modifying the original data
+        norm_data = copy.deepcopy(data)
+    if norm_type == 'max':
+        norm_data.data = norm_data.data / np.max(norm_data.data,axis=2, keepdims=True)
+    elif norm_type == 'sum':
+        norm_data.data = norm_data.data / np.sum(data.data, axis=2, keepdims=True)
+    else:
+        raise ValueError('Normalization type must be either "max" or "sum"')
+    return norm_data
 #%% extract mapping data from datacube
 # get integrated intensity of the hyperspectral data
 def get_intint(data, spectral_range=None, processed_data=None):
@@ -328,7 +348,7 @@ def plot_maps(data,spectral_range=None,data_type='PL',frac_scalebar=0.133335,
 
 #%% Plot an integrated intensity map
 def intint_map(data, data_type,
-spectral_range=None, processed_data=None,
+               spectral_range=None, processed_data=None,
                frac_scalebar=0.133335,
                savefig=False, figname=None, savefile=False, filename=None, savepath=None,
                cbar_adj=True,
@@ -391,10 +411,11 @@ spectral_range=None, processed_data=None,
     return intint
 
 #%%plot an intensity map(relative intensity map) at the given wavelength or wavenumber
-def int_map(original_data, wavelength, data_type,
+def int_map(original_data, wavelength,
             frac_scalebar=0.133335,
             processed_data=None,
-            cbar_adj=True,
+            cbar_adj=True, cbar_label='Intensity / a.u.',
+            cbar_sci_notation=False,
             fontsize=12,labelpad=10,
             savefig=False, figname=None, savefile=False, filename=None, savepath=None,
             **kwargs):
@@ -403,7 +424,7 @@ def int_map(original_data, wavelength, data_type,
     :param original_data (LumiSpectrum): original/only-reconstructed hyperspectral data,
             if warped_data is given, the original data is just used for providing the spectral axis information
     :param wavelength (float): the wavelength or wavenumber
-    :param data_type (str): the type of the data: 'PL', 'Raman', 'PLRatio', 'RamanRatio'
+    :param data_type (str): the type of the data: 'PL', 'Raman', 'NormPL', 'NormRaman'
     :param processed_data (np.ndarray)(optional): the registered data or any data different from the original data
     :return: int_map (np.ndarray): the intensity map at the given wavelength or wavenumber,
                 fig (matplotlib.figure.Figure): the figure object,
@@ -431,16 +452,13 @@ def int_map(original_data, wavelength, data_type,
                                  borderpad=0.1, sep=5, frameon=False, size_vertical=width, color='white',
                                  fontproperties={'size': 15, 'weight': 'bold'})
     ax.add_artist(scalebar)
-    if data_type == 'PL':
-        cbarlabel = 'PL intensity / a.u.'
-    elif data_type == 'Raman':
-        cbarlabel = 'Raman intensity / a.u.'
-    elif data_type == 'PLRatio':
-        cbarlabel = 'Normalized PL intensity'
-    elif data_type == 'RamanRatio':
-        cbarlabel = 'Normalized Raman intensity'
-    cbar=fig.colorbar(cmap, ax=ax)
-    cbar.set_label(cbarlabel, fontsize=fontsize, labelpad=labelpad)
+    if cbar_sci_notation:
+        fmt = matplotlib.ticker.ScalarFormatter(useMathText=True)
+        fmt.set_powerlimits((0, 0))
+        cbar = fig.colorbar(cmap, ax=ax, format=fmt)
+    else:
+        cbar = fig.colorbar(cmap, ax=ax)
+    cbar.set_label(cbar_label, fontsize=fontsize, labelpad=labelpad)
     plt.tight_layout()
     if savefig:
         if figname is None:
@@ -731,7 +749,10 @@ def plot_intint_gaussian(original_data,params,cbar_label='PL integrated intensit
                          cbar_adj=True, ROI=None,
                          frac_scalebar=0.133335,
                          fontsize=12,labelpad=10,
-                         sum_threshold=None,save_path=None,
+                         sum_threshold=None,
+                         savefig=False, figname=None,
+                         savefile=False, filename=None,
+                         save_path=None,
                          **kwargs):
     """
     Plot the integrated intensity maps of the individual Gaussian peaks over the entire spectral range
@@ -782,10 +803,19 @@ def plot_intint_gaussian(original_data,params,cbar_label='PL integrated intensit
     cbar = fig.colorbar(cmap, ax=ax, format=fmt)
     cbar.set_label(cbar_label, fontsize=fontsize, labelpad=labelpad)
     plt.tight_layout()
-    if save_path is not None:
-        plt.savefig(save_path,transparent=True,dpi=300)
+    if savefig:
+        if figname is None:
+            print('Please provide a figure name')
+        else:
+            plt.savefig(save_path+figname+'.png', transparent=True, dpi=300)
     plt.show()
 
+    if savefile:
+        if filename is None:
+            filename = figname
+            print('Warning: No filename provided, using the figure name instead.')
+
+        np.savetxt(save_path+filename+'.txt', intint_gaussian)
     return intint_gaussian
 #%% Plot the centre of mass map
 # Calculate and plot the COM of the PL spectrum for all pixels using vectorized operations
@@ -974,7 +1004,7 @@ def point_marker(map_data,original_data, XY,cbarlabel='Intensity / a.u.',frac_sc
 
 #%% Extract the spectrum at the points of interest and plot them on the same figure
 def Spectrum_extracted(original_data, XY, data_type,
-                       jacobian=False, xlabel_PL='Wavelength / nm',
+                       jacobian=False, xlabel_PL='Wavelength / nm',ylabel=None,
                        major_locator=50,n_minor_locator=2,
                        fontsize=12,labelpad=10, labelsize=12,
                        sci_notation_y=False,
@@ -1025,7 +1055,10 @@ def Spectrum_extracted(original_data, XY, data_type,
         plt.tick_params(which='both', direction='in', right=True, top=True, labelsize=labelsize)
     if y_lim is not None:
         ax.set_ylim(y_lim)
-    ax.set_ylabel('{} intensity / a.u.'.format(data_type), fontsize=fontsize, labelpad=labelpad)
+    if ylabel is not None:
+        ax.set_ylabel(ylabel, fontsize=fontsize, labelpad=labelpad)
+    else:
+        ax.set_ylabel('{} intensity / a.u.'.format(data_type), fontsize=fontsize, labelpad=labelpad)
     if sci_notation_y:
         plt.ticklabel_format(axis='y', style='sci', scilimits=(0, 0))
     plt.tight_layout()
@@ -1034,7 +1067,7 @@ def Spectrum_extracted(original_data, XY, data_type,
     plt.show()
 #%% Plot an average spectrum
 def avg_spectrum(data, data_type,
-                 jacobian=False, xlabel_PL='Wavelength / nm',
+                 jacobian=False, xlabel_PL='Wavelength / nm',ylabel = None,
                  major_locator=50,n_minor_locator=2,params_ROI=None,
                  sci_notation_y=True,
                  xlim=None, ylim=None,
@@ -1080,7 +1113,10 @@ def avg_spectrum(data, data_type,
     ax.set_xlabel(x_label, fontsize=fontsize, labelpad=labelpad)
     fmt = matplotlib.ticker.ScalarFormatter(useMathText=True)
     fmt.set_powerlimits((0, 0))
-    ax.set_ylabel('{} intensity / a.u.'.format(data_type), fontsize=fontsize, labelpad=labelpad)
+    if ylabel is not None:
+        ax.set_ylabel(ylabel, fontsize=fontsize, labelpad=labelpad)
+    else:
+        ax.set_ylabel('{} intensity / a.u.'.format(data_type), fontsize=fontsize, labelpad=labelpad)
     ax.tick_params(which='both', direction='in', right=True, top=True, labelsize=labelsize)
     if sci_notation_y:
         plt.ticklabel_format(axis='y', style='sci', scilimits=(0,0))
@@ -1102,7 +1138,7 @@ def avg_spectrum(data, data_type,
 
 #%% Compare the spectra on the same figure, for example, the average spectrum before & after illumination
 def plot_spectra(spc_list, wl_list, data_type,
-                 jacobian=False,xlabel_PL='Wavelength / nm',
+                 jacobian=False,xlabel_PL='Wavelength / nm',ylabel=None,
                  xlim=None,ylim=None,label_list=None,
                  text=False,text_coords=None,
                  major_locator=50,n_minor_locator=2,sci_notation_y=False,
@@ -1124,11 +1160,11 @@ def plot_spectra(spc_list, wl_list, data_type,
     :return:
     """
     if xlim:
-        for wl in wl_list:
-            x1 = np.argmin(np.abs(wl - xlim[0]))
-            x2 = np.argmin(np.abs(wl - xlim[1]))
-            wl_list[wl_list.index(wl)] = wl[x1:x2]
-            spc_list[wl_list.index(wl)] = spc_list[wl_list.index(wl)][x1:x2]
+        for i in range(len(wl_list)):
+            x1 = np.argmin(np.abs(wl_list[i] - xlim[0]))
+            x2 = np.argmin(np.abs(wl_list[i] - xlim[1]))
+            wl_list[i] = wl_list[i][x1:x2]
+            spc_list[i] = spc_list[i][x1:x2]
 
     fig, ax = plt.subplots()
     plt.style.use(colorstyle)  # set the color style
@@ -1141,7 +1177,10 @@ def plot_spectra(spc_list, wl_list, data_type,
     elif data_type == 'Raman':
         x_label = 'Raman shift / cm$^{-1}$'
     ax.set_xlabel(x_label, fontsize=fontsize, labelpad=labelpad)
-    ax.set_ylabel('{} intensity / a.u.'.format(data_type), fontsize=fontsize, labelpad=labelpad)
+    if ylabel is not None:
+        ax.set_ylabel(ylabel, fontsize=fontsize, labelpad=labelpad)
+    else:
+        ax.set_ylabel('{} intensity / a.u.'.format(data_type), fontsize=fontsize, labelpad=labelpad)
     ax.tick_params(which='both', direction='in', right=True, top=True, labelsize=labelsize)
     ax.xaxis.set_major_locator(MultipleLocator(major_locator))
     ax.xaxis.set_minor_locator(AutoMinorLocator(n_minor_locator))
@@ -1228,6 +1267,8 @@ def find_maxima(original_data, spectrum_data, data_type,
     if save_path is not None:
         plt.savefig(save_path,transparent=True,dpi=300)
     plt.show()
+
+    print('Peak positions:', pps)
     return pps
 
 #%% Plot histogram(s) of the 2d map data
