@@ -251,6 +251,8 @@ def score_map(data, pca, component_index,cbar_adjust=False,
     #ax.set_title('Score map of the {}. PC'.format(component_index))  # index shown in the title is starting from 1
     plt.tight_layout()
     plt.show()
+
+    return score_map
 #%% Option 2: applying PCA via scipy
 from scipy.linalg import svd
 def svd_PCA(data, ScreePlot=False, n_PCs=None, full_matrices=False):
