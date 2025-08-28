@@ -413,7 +413,7 @@ def intint_map(data, data_type,
 #%%plot an intensity map(relative intensity map) at the given wavelength or wavenumber
 def int_map(original_data, wavelength,
             frac_scalebar=0.133335,
-            processed_data=None,
+            processed_data=None,cmap='viridis',
             cbar_adj=True, cbar_label='Intensity / a.u.',
             cbar_sci_notation=False,
             fontsize=12,labelpad=10,
@@ -444,9 +444,9 @@ def int_map(original_data, wavelength,
     fig, ax = plt.subplots()
     if cbar_adj:
         vmin, vmax = adjust_colorbar(int_map, **kwargs)
-        cmap = ax.imshow(int_map, vmin=vmin, vmax=vmax, cmap='viridis')
+        cmap = ax.imshow(int_map, vmin=vmin, vmax=vmax, cmap=cmap)
     else:
-        cmap = ax.imshow(int_map, cmap='viridis')
+        cmap = ax.imshow(int_map, cmap=cmap)
     ax.set_axis_off()
     scalebar = AnchoredSizeBar(ax.transData, len_in_pix, str(length) + ' μm', 4, pad=1,
                                  borderpad=0.1, sep=5, frameon=False, size_vertical=width, color='white',
@@ -959,6 +959,8 @@ def select_point(data):
 #%% Mark points of interest on the map
 def point_marker(map_data,original_data, XY,cbarlabel='Intensity / a.u.',frac_scalebar=0.133335,
                  fontsize=12,labelpad=10,colorseq='Dark2',colors_udef=None,
+                 marksize=15,markeredgewidth=3,
+                 cmap='viridis',
                  cbar_adjust=True,cbar_sci_notation=True,
                  save_path=None,
                  **kwargs):
@@ -979,9 +981,9 @@ def point_marker(map_data,original_data, XY,cbarlabel='Intensity / a.u.',frac_sc
     fig,ax = plt.subplots()
     if cbar_adjust:
         vmin, vmax = adjust_colorbar(map_data, **kwargs)
-        cmap = ax.imshow(map_data,vmin=vmin, vmax=vmax)
+        cmap = ax.imshow(map_data,vmin=vmin, vmax=vmax, cmap=cmap)
     else:
-        cmap = ax.imshow(map_data)
+        cmap = ax.imshow(map_data, cmap=cmap)
     ax.set_axis_off()
     scalebar = AnchoredSizeBar(ax.transData, len_in_pix, str(length) + ' μm', 4, pad=1,
                                borderpad=0.1, sep=5, frameon=False, size_vertical=width, color='white',
@@ -989,7 +991,7 @@ def point_marker(map_data,original_data, XY,cbarlabel='Intensity / a.u.',frac_sc
     ax.add_artist(scalebar)
     #colors = ['m', 'k', 'b', 'r', 'c', 'g']
     for i in range(len(XY)):
-        ax.plot(XY[i][0], XY[i][1], 'o', mfc='none', mec=colors[i],mew=3, markersize=15)
+        ax.plot(XY[i][0], XY[i][1], 'o', mfc='none', mec=colors[i],mew=markeredgewidth, markersize=marksize)
     fmt = matplotlib.ticker.ScalarFormatter(useMathText=True)
     fmt.set_powerlimits((0, 0))
     if cbar_sci_notation:
@@ -1006,6 +1008,7 @@ def point_marker(map_data,original_data, XY,cbarlabel='Intensity / a.u.',frac_sc
 def Spectrum_extracted(original_data, XY, data_type,
                        jacobian=False, xlabel_PL='Wavelength / nm',ylabel=None,
                        major_locator=50,n_minor_locator=2,
+                       linewidth=2,
                        fontsize=12,labelpad=10, labelsize=12,
                        sci_notation_y=False,
                        colorseq='Dark2', colors_udef=None,
@@ -1040,7 +1043,7 @@ def Spectrum_extracted(original_data, XY, data_type,
         intensity = intensities[y, x, :]
         if jacobian:
             Spectr, intensity = jacobian_conversion(intensity, Spectr, plot=False)
-        ax.plot(Spectr, intensity, color=colors[i])
+        ax.plot(Spectr, intensity, color=colors[i], linewidth=linewidth)
     if data_type == 'PL':
         ax.set_xlabel(xlabel_PL,
                       fontsize=fontsize, labelpad=labelpad)
@@ -1140,6 +1143,7 @@ def avg_spectrum(data, data_type,
 def plot_spectra(spc_list, wl_list, data_type,
                  jacobian=False,xlabel_PL='Wavelength / nm',ylabel=None,
                  xlim=None,ylim=None,label_list=None,
+                 linewidth=2,
                  text=False,text_coords=None,
                  major_locator=50,n_minor_locator=2,sci_notation_y=False,
                  fontsize=12,labelpad=10, labelsize=12,
@@ -1193,7 +1197,7 @@ def plot_spectra(spc_list, wl_list, data_type,
             print('Please provide the coordinates for the text')
         for i in range(len(spc_list)):
             ax.text(text_coords[i][0], text_coords[i][1], label_list[i], transform=ax.transAxes,
-                    fontsize=labelsize, va='bottom', ha='center',color=ax.lines[i].get_color())
+                    fontsize=fontsize, va='bottom', ha='center',color=ax.lines[i].get_color())
     if ylim is not None:
         ax.set_ylim(ylim)
     plt.tight_layout()
