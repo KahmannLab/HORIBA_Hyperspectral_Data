@@ -1,5 +1,7 @@
+from ImageProcessing.HyperspcData import XY_PL_1
 from KahmannLab.HORIBA_Hyperspectral_Data import HORIBA_HyperspectralData as HSD
 from KahmannLab.HORIBA_Hyperspectral_Data import PCA
+from KahmannLab.HORIBA_Hyperspectral_Data import Image_registration as IR
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib_scalebar.scalebar import ScaleBar
@@ -11,229 +13,106 @@ reload(HSD)
 #%% Just run this cell if changes are made in the module PCA
 reload(PCA)
 #%% load the hyperspectral data in xml format
-# here we load the PL and Raman data before and after illumination, named as 1 and 2, respectively
-path_PL_1 = 'F:/TUC_Data/Data_Microscope/MS013_PEAMAPbI-n2-fre/MS013_241104/FormatCov/PLMap_n2_2_0_1 s_532 nm_600 gr_mm_x100_100 µm_300 µm_0_025 %_new_marker.xml'
-path_PL_2 = 'F:/TUC_Data/Data_Microscope/MS013_PEAMAPbI-n2-fre/MS013_241104/FormatCov/PLMap_n2_2_0_1 s_532 nm_600 gr_mm_x100_100 µm_300 µm_0_025 %_new_marker_after_illum.xml'
-path_Raman_1 = 'F:/TUC_Data/Data_Microscope/MS013_PEAMAPbI-n2-fre/MS013_241104/FormatCov/RamanMap_n2_2_0_1 s_785 nm_600 gr_mm_x100_100 µm_300 µm_100 %_new_marker.xml'
-path_Raman_2 = 'F:/TUC_Data/Data_Microscope/MS013_PEAMAPbI-n2-fre/MS013_241104/FormatCov/RamanMap_n2_2_0_1 s_785 nm_600 gr_mm_x100_100 µm_300 µm_100 %_new_marker_after_illum.xml'
-
+folder = r'Y:\d. Optical lab - Microscope user data\Mengru\MS035_PEA2MAPb2I7_old\MS035_PEA2MAPb2I7_old_confocal'
+paths = HSD.xml_paths(folder,endswith='.xml',IDs=['ROI-x1'])
 #%% save path
-save_path = 'F:/TUC_Data/Data_Microscope/MS013_PEAMAPbI-n2-fre/MS013_241104/Analysis/new marker/'
-save_path_pcs = 'F:/TUC_Data/Data_Microscope/MS013_PEAMAPbI-n2-fre/MS013_241104/Analysis/new marker/PCA/'
-
+save_path = r'Y:\a. Personal folders\Mengru\Data\MS035_PEA2MAPb2I7_old\MS035_confocal_analysis'
 #%% load the hyperspectral data
-data_PL_1 = HSD.load_xml(path_PL_1)
-data_PL_2 = HSD.load_xml(path_PL_2)
-data_Raman_1 = HSD.load_xml(path_Raman_1)
-data_Raman_2 = HSD.load_xml(path_Raman_2)
-
-#%% remove the data below 0 if needed
-data_PL_1 = HSD.remove_negative(data_PL_1)
-data_PL_2 = HSD.remove_negative(data_PL_2)
-data_Raman_1 = HSD.remove_negative(data_Raman_1)
-data_Raman_2 = HSD.remove_negative(data_Raman_2)
-#%% Plot integrated intensity maps
-# PL integrated intensity map before illumination
-intint_PL_1 = HSD.intint_map(data_PL_1,'PL', (595, 635))
-#%% Raman integrated intensity map before illumination
-intint_Raman_1 = HSD.intint_map(data_Raman_1,'Raman',(40, 100))
-#%% PL integrated intensity map after illumination
-intint_PL_2 = HSD.intint_map(data_PL_2, 'PL',(500,900))
-#%% Raman integrated intensity map after illumination
-intint_Raman_2 = HSD.intint_map(data_Raman_2,'Raman',(40, 70))
-#%% Create mask to highlight the area of fiducial markers
-mask_PL_1 = HSD.create_mask(intint_PL_1, 80, 100,100)
-mask_PL_2 = HSD.create_mask(intint_PL_2, 50, 100,100)
-mask_Raman_1 = HSD.create_mask(intint_Raman_1, 170, 100,100)
-mask_Raman_2 = HSD.create_mask(intint_Raman_2, 175, 100,100)
-# check the mask
-plt.imshow(mask_PL_1)
-plt.colorbar()
-plt.show()
-
-#%% Image registration based on the masked PL and Raman maps
-outprefix = 'F:/TUC_Data/Data_Microscope/MS013_PEAMAPbI-n2-fre/MS013_241104/Analysis/new marker/'
-# i gives the random seed for the transformation
-for i in range(26,27,1):
-    transf_1, warped_mov_1 = HSD.ants_registration(mask_PL_1, mask_Raman_1,'Translation',random_seed=i,
-                                                   outprefix=outprefix+'Raman1_')
-    #plt.savefig(save_path+'Masked_PL_Raman_maps_registration_before_rs{}.png'.format(i),transparent=True)
-    plt.show()
-    plt.close()
-
-#%% Image registration based on masked PL maps before and after illumination
-# PL map based on the PL data before illumination is the fixed image for all registrations
-for i in range(45,46,1):
-    transf_2, warped_mov_2 = HSD.ants_registration(mask_PL_1, mask_PL_2,'Translation',random_seed=i,
-                                                   outprefix=outprefix+'PL2_') # register PL map before illumination to that after illumination
-    #plt.savefig(save_path+'Masked_maps_registration_before_after_rs{}.png'.format(i),transparent=True)
-    plt.show()
-    plt.close()
-
-#%% Image registration based on the PL before illumination and Raman maps after illumination
-for i in range(38,39,1):
-    transf_3, warped_mov_3 = HSD.ants_registration(mask_PL_1, mask_Raman_2,'Translation',random_seed=i,
-                                                   outprefix=outprefix+'Raman2_') # register PL map before illumination to that after illumination
-    #plt.savefig(save_path+'Masked_PL_Raman_maps_registration_before_after_rs{}.png'.format(i),transparent=True)
-    plt.show()
-
+hsdata_PL_1 = HSD.load_xml(paths[0],remove_spikes=True)
+hsdata_PL_2 = HSD.load_xml(paths[1],remove_spikes=True)
+hsdata_Raman_1 = HSD.load_xml(paths[2],remove_spikes=True)
+hsdata_Raman_2 = HSD.load_xml(paths[3],remove_spikes=True)
+#%% Extract data arrays, axes, and pixel sizes
+data_PL_1 = hsdata_PL_1.data
+wl_PL_1 = hsdata_PL_1.axes_manager[2].axis
+px_size_PL_1 = hsdata_PL_1.axes_manager[0].scale
+data_Raman_1 = hsdata_Raman_1.data
+wl_Raman_1 = hsdata_Raman_1.axes_manager[2].axis
+px_size_Raman_1 = hsdata_Raman_1.axes_manager[0].scale
+#%% Visualize the data
+HSD.visual_data(data_Raman_1, wl_Raman_1) # plot all spectra in one figure
+maps_PL_1 = HSD.plot_maps(data_PL_1, wl_PL_1, px_size_PL_1, data_type='PL') # plot maps to check the features
+maps_Raman_1 = HSD.plot_maps(data_Raman_1, wl_Raman_1, px_size_Raman_1, data_type='Raman')
+#%% create mask to highlight the features
+mask_1 = IR.create_mask(maps_PL_1[0],low_thresh=0,high_thresh=0.3,cleanup=0,plot=True)
+mask_2 = IR.create_mask(maps_Raman_1[0],low_thresh=0,high_thresh=0.5,cleanup=0,plot=True)
+#%% register the PL and Raman maps before illumination
+reg = IR.img_registration(maps_PL_1[0],maps_Raman_1[1],
+                          #fixed_mask=mask_1,moving_mask=mask_2,
+                          type_of_transform='antsRegistrationSyN[t]',
+                          outprefix=save_path+'registration_Raman_1_to_PL_1_',
+                          random_seed=24, # for reproducibility
+                          return_overlap_flag=True, plot_overlap=True,
+                          )
 # %% Apply the transformation to the original dataset
-warped_data_Raman_1 = HSD.transform2hsi(data_PL_1, data_Raman_1, transf_1)
-# Apply the transformation to the original PL2 dataset (registered PL after illumination)
-warped_data_PL_2 = HSD.transform2hsi(data_PL_1, data_PL_2, transf_2)
-# Apply the transformation to the original Raman2 dataset (registered Raman after illumination)
-warped_data_Raman_2 = HSD.transform2hsi(data_PL_1, data_Raman_2, transf_3)
-
-# %% Noise reduction via PCA
-# default algorithm is SVD (singular value decomposition)
-data_PL_1.decomposition(algorithm='SVD', center='signal')
-data_Raman_1.decomposition(algorithm='SVD', center='signal')
-data_PL_2.decomposition(algorithm='SVD', center='signal')
-data_Raman_2.decomposition(algorithm='SVD', center='signal')
-
-#%% Plot the explained variance ratio (EVR) for the Raman data
-PCA.plot_evr(data_Raman_1, 50)
+cropped_warped_data_Raman_1 = IR.transform2dataset(data_PL_1, data_Raman_1, reg[0],interpolator='nearestNeighbor',
+                                           crop_to_overlap_flag=True, bbox=[1,51,0,50])
+cropped_data_PL_1 = data_PL_1[1:51,0:50,:]
+#%% Noise reduction via PCA
+pca_Raman_1, PC_spc_Raman_1 = PCA.sklearn_PCA(cropped_warped_data_Raman_1, ScreePlot=True, n_PCs=20, svd_solver='full')
 #%% Plot the spectrum of the PCs
-for i in range(10):
-    PCA.PC_spc(data_PL_1, i, 'PL',
-               save_path=None)
-               #save_path=save_path_pcs+'before_PL_PC{}_spectrum.png'.format(i+1))
+PCA.plot_PCs(PC_spc_Raman_1, wl_Raman_1, component_idx=6)
+#%% Plot score map
+PCA.score_map(cropped_warped_data_Raman_1, pca_Raman_1, component_index=150, px_size=px_size_Raman_1)
 #%% Reconstruct the PL and Raman data
-rec_data_PL_1 = PCA.rec_data(data_PL_1, 20) # using the first 20 PCs
-rec_data_Raman_1 = PCA.rec_data(data_Raman_1, 20) # using the first 20 PCs
-rec_data_PL_2 = PCA.rec_data(data_PL_2, 35) #using the first 35 PCs
-rec_data_Raman_2 = PCA.rec_data(data_Raman_2, 20) # using the first 20 PCs
-#%% warp reconstructed Raman data 1
-warped_rec_data_Raman_1 = HSD.transform2hsi(data_PL_1, rec_data_Raman_1, transf_1, interpolator='nearestNeighbor')
-# warp reconstructed PL data
-warped_rec_data_PL_2 = HSD.transform2hsi(data_PL_1, rec_data_PL_2, transf_2, interpolator='nearestNeighbor')
-# warp reconstructed Raman data 2
-warped_rec_data_Raman_2 = HSD.transform2hsi(data_PL_1, rec_data_Raman_2, transf_3, interpolator='nearestNeighbor')
-
+rec_cropped_Raman_1 = PCA.reconstruct_data(cropped_warped_data_Raman_1, pca_Raman_1, component_list=[1,2,9])
+# plot reconstructed Raman data
+HSD.plot_spectra([cropped_warped_data_Raman_1[30,10,:],rec_cropped_Raman_1[30,10,:]],
+                 wl_list=[wl_Raman_1,wl_Raman_1], data_type='Raman',major_locator=100, n_minor_locator=2)
+#%% Plot averaged spectrum
+avg_PL_1 = HSD.avg_spectrum(cropped_data_PL_1, wl_PL_1, 'PL',jacobian=True,xlabel_PL='Energy (eV)',
+                            major_locator=0.2,n_minor_locator=2)
+avg_Raman_1 = HSD.avg_spectrum(data_Raman_1, wl_Raman_1, 'Raman',major_locator=200,n_minor_locator=2)
+#%% convert wavelength to energy for PL data 1
+cropped_jacobian_PL_1, energy_PL_1 = HSD.jacobian_conversion_hsdata(cropped_data_PL_1, wl_PL_1)
 #%% Fit the PL spectrum of a single pixel with 3 Gaussian peaks
 #for PL data 1
-initial_guesses_1 = [15, 575, 10, # 1st peak: amplitude, center, width, n=2
-                         50, 620, 10, # 2nd peak: amplitude, center, width, n=3
-                         35, 650, 10]  # 3rd peak: amplitude, center, width
+initial_guesses_1 = [1500,1.9 , 0.2, # 1st peak: amplitude, center, width, n=2
+                         3000, 2.0,0.05, # 2nd peak: amplitude, center, width, n=3
+                         3500, 2.17,0.05]  # 3rd peak: amplitude, center, width
+bounds_1 = [[0, 1.8, 0, 0, 1.95, 0, 0, 2.1, 0],
+            [np.inf, 1.9, 0.6, np.inf, 2.1, 0.5, np.inf, 2.2, 0.5]]
 
-PL1_gaus_params,_ = HSD.gaussian_fit(data_PL_1, func_name='triple_gaussian', initial_guesses=initial_guesses_1)
+fit_params_PL1, fit_errors_PL1 = HSD.gaussian_fit(cropped_data_PL_1,xaxis=wl_PL_1,jacobian=True,
+                                                  func_name='triple_gaussian', initial_guesses=initial_guesses_1,
+                                                  bounds=bounds_1)
+HSD.plot_gaussian_fit(cropped_data_PL_1, wl_PL_1, fit_params_PL1,
+                      jacobian=True,
+                      func_name='triple_gaussian', px_YX=(33,16))
 #%%
-PL1_intint_gaus1= HSD.plot_intint_gaussian(data_PL_1, params=PL1_gaus_params[:,:,0:3],
-                                           save_path=None)
-                                           #save_path=save_path+'PL_Integrated_intensity_map_Gaus1.png')
+PL1_intint_gaus1= HSD.intint_gaussian(cropped_data_PL_1, wl_PL_1, params=fit_params_PL1[:,:,0:3],
+                                      jacobian=True,
+                                      plot=True, px_size=px_size_PL_1,
+                                      save_path=None)
 #%%
-PL1_intint_gaus2= HSD.plot_intint_gaussian(data_PL_1, params=PL1_gaus_params[:,:,3:6],
-                                           save_path=None)
+PL1_intint_gaus2= HSD.intint_gaussian(cropped_jacobian_PL_1, energy_PL_1, params=fit_params_PL1[:,:,3:6],
+                                      jacobian=False,
+                                      plot=True, px_size=px_size_PL_1,
+                                      save_path=None)
 #%%
-PL1_intint_gaus3= HSD.plot_intint_gaussian(data_PL_1, params=PL1_gaus_params[:,:,6:9],
-                                           save_path=None)
-#%% Fit the PL spectrum of a single pixel with 3 Gaussian peaks (for reconstructed PL data 1)
-rec_PL1_intint_gaus1 = HSD.plot_intint_gaussian(rec_data_PL_1, params=PL1_gaus_params[:,:,0:3],sum_threshold=4000)
-rec_PL1_intint_gaus2 = HSD.plot_intint_gaussian(rec_data_PL_1, params=PL1_gaus_params[:,:,3:6],sum_threshold=4000)
-rec_PL1_intint_gaus3 = HSD.plot_intint_gaussian(rec_data_PL_1, params=PL1_gaus_params[:,:,6:9],sum_threshold=4000)
-#%% Fit the PL spectrum of a single pixel with 3 Gaussian peaks
-#for PL data 2
-initial_guesses_2 = [15, 575, 10, # 1st peak: amplitude, center, width, n=2
-                            35, 620, 10, # 2nd peak: amplitude, center, width, n=3
-                            20, 650, 10] # 3rd peak: amplitude, center, width, n=4
-PL2_gaus_params,_ = HSD.gaussian_fit(data_PL_2, func_name='triple_gaussian', initial_guesses=initial_guesses_2)
-#%% Fit the PL spectrum of a single pixel with 3 Gaussian peaks (for reconstructed PL data 2)
-rec_PL2_intint_gaus1 = HSD.plot_intint_gaussian(rec_data_PL_2, params=PL2_gaus_params[:,:,0:3],sum_threshold=4000)
-rec_PL2_intint_gaus2 = HSD.plot_intint_gaussian(rec_data_PL_2, params=PL2_gaus_params[:,:,3:6],sum_threshold=4000)
-rec_PL2_intint_gaus3 = HSD.plot_intint_gaussian(rec_data_PL_2, params=PL2_gaus_params[:,:,6:9],sum_threshold=4000)
-#%% Register the reconstructed integrated intensity map of the individual Gaussian peak for PL data 2 to that for PL data 1
-warped_rec_PL2_intint_gaus1 = HSD.transform2map(rec_PL1_intint_gaus1, rec_PL2_intint_gaus1, transf_2)
-warped_rec_PL2_intint_gaus2 = HSD.transform2map(rec_PL1_intint_gaus2, rec_PL2_intint_gaus2, transf_2)
-warped_rec_PL2_intint_gaus3 = HSD.transform2map(rec_PL1_intint_gaus3, rec_PL2_intint_gaus3, transf_2)
-
-#%% Visulize a ROI of the 1st integrated intensity map over the entire spectral range using reconstructed PL data 1
-HSD.plot_intint_gaussian(rec_data_PL_1, PL1_gaus_params[:,:,0:3], ROI=(5,5,50,50))
+PL1_intint_gaus3= HSD.intint_gaussian(cropped_jacobian_PL_1, energy_PL_1, params=fit_params_PL1[:,:,6:9],
+                                      jacobian=False,
+                                      plot=True, px_size=px_size_PL_1,
+                                      save_path=None)
 #%% Plot the PL COM map in ROI
-com_map_PL_1 = HSD.plot_com_map(rec_data_PL_1, data_type='PL', params_ROI=(5,5,50,50))
-#%%
-com_map_PL_2 = HSD.plot_com_map(rec_data_PL_2, processed_data=warped_rec_data_PL_2, data_type='PL', params_ROI=(5,5,50,50))
+com_map_PL_1 = HSD.plot_com_map(cropped_jacobian_PL_1, energy_PL_1,
+                                px_size=px_size_PL_1,
+                                data_type='PL',
+                                int_unit='eV')
 #%% Extract the max, min, and mean values of the PL integrated intensity map in ROI [5:55, 5:55]
-YX_PL1_guas1 = [HSD.coord_extract(rec_PL1_intint_gaus1[5:55,5:55], 'max'),
-                HSD.coord_extract(rec_PL1_intint_gaus1[5:55,5:55], 'min'),
-                HSD.coord_extract(rec_PL1_intint_gaus1[5:55,5:55], 'median')]
+XY_PL_1 = HSD.select_point(PL1_intint_gaus1)
 #%% Mark the points of interest in the PL integrated intensity map for PL data 1
-HSD.point_marker(rec_PL1_intint_gaus1[5:55,5:55], rec_data_PL_1, YX_PL1_guas1, 'PL integrated intensity (a.u.)')
+#%% mark the points of interest on the map
+HSD.point_marker(com_map_PL_1,px_size_PL_1, XY_PL_1,
+                 colorseq='Dark2',cbarlabel='PL center of mass / eV',frac_scalebar=0.23,
+                 fontsize=15,markeredgewidth=5,marksize=20,
+                 #save_path=save_path+'MS035_03_confocal_PLMap_ROI_x1-cropped2_COM_map-before_marked.png',
+                 cbar_sci_notation=False)
 #%% Plot the corresponding PL spectra at the points of interest
-HSD.Spectrum_extracted(rec_data_PL_1, YX_PL1_guas1, data_type='PL',spc_labels=['max','min','median'],
-                       processed_data=rec_data_PL_1.data[5:55,5:55,:])
-#%% Extract the corresponding Raman spectra at the points of interest extracted from the PL integrated intensity map for PL data 1
-HSD.Spectrum_extracted(rec_data_Raman_1, YX_PL1_guas1, data_type='Raman',spc_labels=['max','min','median'],
-                       major_locator=500, n_minor_locator=5,
-                       processed_data=warped_rec_data_Raman_1[5:55,5:55,:])
+HSD.Spectrum_extracted(cropped_jacobian_PL_1, energy_PL_1,  XY_PL_1, data_type='PL',
+                       major_locator=50, n_minor_locator=2,
+                       fontsize=20, labelpad=10, labelsize=15,
+                       sci_notation_y=True,linewidth=5)
 #%% Plot Raman integrated intensity map in ROI using the registered reconstructed Raman data 1
-warped_rec_Raman_intint_1 = HSD.intint_map(rec_data_Raman_1, 'Raman',(70, 100),warped_rec_data_Raman_1[5:55,5:55,:])
-#%% Plot Raman (relative) intensity map at 100 cm^-1 in ROI using the registered reconstructed Raman data 1
-warped_rec_Raman_1_int_1 = HSD.int_map(rec_data_Raman_1, 1378, 'Raman',processed_data=warped_rec_data_Raman_1[5:55,5:55,:])
-warped_rec_Raman_1_int_2 = HSD.int_map(rec_data_Raman_1, 90, 'Raman',processed_data=warped_rec_data_Raman_1[5:55,5:55,:])
-rel_int_Raman_1 = warped_rec_Raman_1_int_2/warped_rec_Raman_1_int_1
-#%% correlation map between the PL integrated intensity over gaussian peak 1 and relative Raman intensity at 90 cm^-1
-HSD.plot_2d_hist([rec_PL1_intint_gaus3[5:55,5:55], rel_int_Raman_1],
-                 labels=['PL integrated intensity (a.u.)','Relative Raman intensity (a.u.)'])
-#%% Plot PL average spectrum
-avg_PL_1 = HSD.avg_spectrum(data_PL_1, 'PL')
-#%% Plot PL average spectrum PL data 2
-avg_PL_2 = HSD.avg_spectrum(data_PL_2, 'PL')
-#%% Plot the average PL spectrum before & after on the same figure
-spcs = [avg_PL_1, avg_PL_2]
-axes = [data_PL_1.axes_manager[2].axis, data_PL_2.axes_manager[2].axis]
-#%%
-HSD.plot_spectra(spcs, axes, 'PL',
-                 label_list=['PL before illumination','PL after illumination'])
-#%% Plot averaged Raman spectrum
-avg_Raman_1 = HSD.avg_spectrum(data_Raman_1, 'Raman',major_locator=500, n_minor_locator=5)
-avg_Raman_2 = HSD.avg_spectrum(data_Raman_2, 'Raman',major_locator=500, n_minor_locator=5)
-#%%
-spcs_Raman = [avg_Raman_1, avg_Raman_2]
-axes_Raman = [data_Raman_1.axes_manager[2].axis, data_Raman_2.axes_manager[2].axis]
-HSD.plot_spectra(spcs_Raman, axes_Raman, 'Raman',major_locator=500, n_minor_locator=5,
-                 label_list=['Raman before illumination','Raman after illumination'])
-#%% Find the maxima in the average PL spectrum
-HSD.find_maxima(data_Raman_1, avg_Raman_1, 'Raman', 0.3,25)
-#%% Plot a histogram of the PL integrated intensity map
-HSD.plot_hist(rec_PL1_intint_gaus1[5:55,5:55], 'PL integrated intensity (a.u.)', bins=500,
-              bins_range=(1,1000), spread=True)
-#%% Compare the histograms of the PL integrated intensity maps before and after illumination
-hist_Gaus1_PL1 = [rec_PL1_intint_gaus1[5:55,5:55], warped_rec_PL2_intint_gaus1[5:55,5:55]]
-hist_Gaus2_PL1 = [rec_PL1_intint_gaus2[5:55,5:55], warped_rec_PL2_intint_gaus2[5:55,5:55]]
-hist_Gaus3_PL1 = [rec_PL1_intint_gaus3[5:55,5:55], warped_rec_PL2_intint_gaus3[5:55,5:55]]
-HSD.plot_hist(hist_Gaus1_PL1, labels=['PL before illumination','PL after illumination'],
-              x_label='PL integrated intensity (a.u.)', bins=500,
-              bins_range=(1,1000), spread=True,
-              save_path=None)
-              #save_path=save_path+'Gaus1_PL_histogram.png')
-HSD.plot_hist(hist_Gaus2_PL1, labels=['PL before illumination','PL after illumination'],
-               x_label='PL integrated intensity (a.u.)', bins=500,
-                bins_range=(1,3000), spread=True,
-                save_path=None)
-                #save_path=save_path+'Gaus2_PL_histogram.png')
-HSD.plot_hist(hist_Gaus3_PL1, labels=['PL before illumination','PL after illumination'],
-               x_label='PL integrated intensity (a.u.)', bins=500,
-                bins_range=(1,5000), spread=True,
-                save_path=None)
-                #save_path=save_path+'Gaus3_PL_histogram.png')
-
-#%% Gaussian fit for PL spectrum of a single pixel, e.g. maximum in the PL integrated intensity map 1
-# for PL data 1
-HSD.plot_gaussian_fit(rec_data_PL_1, PL1_gaus_params, func_name='triple_gaussian', px_YX=YX_PL1_guas1[0])
-#%% Plot loading maps to identify the spatial distribution of the individual Gaussian peaks
-# loading of the 2nd PC: which represents a distribution of the emission at 650 nm
-PCA.loading_map(rec_data_PL_1,2)
-
-#%% animation to show the reconstructed PL data 1
-PCA.rec_spc_animation(data_PL_1, px=(15,25), start_nPCs=200, end_nPCs=20, data_type='PL',
-                      save_path=save_path+'PL1_reconstructed_animation.gif')
-#%% animation to show the reconstructed Raman data 1
-PCA.rec_spc_animation(data_Raman_1, px=(15,25), start_nPCs=200, end_nPCs=20, data_type='Raman',
-                      major_locator=500, n_minor_locator=5,
-                      save_path=save_path+'Raman1_reconstructed_animation.gif')
-#%% Plot the white light reflection image
-import pandas as pd
-img_Raman_1_path = 'F:/TUC_Data/Data_Microscope/MS013_PEAMAPbI-n2-fre/MS013_241104/FormatCov/RamanMap_n2_2_0_1 s_785 nm_600 gr_mm_x100_100 µm_300 µm_100 %_new_marker.txt'
-img_Raman_1 = pd.read_csv(img_Raman_1_path, sep='\t', header=0, index_col=0)
-#%%
-HSD.plot_img(img_Raman_1)
+rec_Raman_intint = HSD.intint_map(rec_cropped_Raman_1, wl_Raman_1, data_type='Raman',
+                                  px_size=px_size_Raman_1)
