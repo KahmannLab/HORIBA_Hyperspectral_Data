@@ -1,23 +1,17 @@
-from ImageProcessing.HyperspcData import XY_PL_1
 from KahmannLab.HORIBA_Hyperspectral_Data import HORIBA_HyperspectralData as HSD
 from KahmannLab.HORIBA_Hyperspectral_Data import PCA
 from KahmannLab.HORIBA_Hyperspectral_Data import Image_registration as IR
+from KahmannLab.HORIBA_Hyperspectral_Data import H5_Editor as H5E
 import numpy as np
-import matplotlib.pyplot as plt
-from matplotlib_scalebar.scalebar import ScaleBar
-import matplotlib.ticker
-from matplotlib.ticker import MultipleLocator, AutoMinorLocator
 from importlib import reload
 #%% Just run this cell if changes are made in the module HORIBA_HyperspectralData
 reload(HSD)
-#%% Just run this cell if changes are made in the module PCA
-reload(PCA)
 #%% load the hyperspectral data in xml format
 folder = r'Y:\d. Optical lab - Microscope user data\Mengru\MS035_PEA2MAPb2I7_old\MS035_PEA2MAPb2I7_old_confocal'
 paths = HSD.xml_paths(folder,endswith='.xml',IDs=['ROI-x1'])
 #%% save path
 save_path = r'Y:\a. Personal folders\Mengru\Data\MS035_PEA2MAPb2I7_old\MS035_confocal_analysis'
-#%% load the hyperspectral data
+#%% load the hyperspectral data with spike removal based on built-in function of HyperSpy
 hsdata_PL_1 = HSD.load_xml(paths[0],remove_spikes=True)
 hsdata_PL_2 = HSD.load_xml(paths[1],remove_spikes=True)
 hsdata_Raman_1 = HSD.load_xml(paths[2],remove_spikes=True)
@@ -29,6 +23,13 @@ px_size_PL_1 = hsdata_PL_1.axes_manager[0].scale
 data_Raman_1 = hsdata_Raman_1.data
 wl_Raman_1 = hsdata_Raman_1.axes_manager[2].axis
 px_size_Raman_1 = hsdata_Raman_1.axes_manager[0].scale
+#%% load the hyperspectral data in h5 format
+h5_folder = r'Y:\d. Optical lab - Microscope user data\Mengru\MS032_POPULAR_correlation\C_printed-S1-1_confocal\H5_files'
+paths = H5E.h5_paths(h5_folder, endswith='.h5', keywords=['ROI-1A'])
+#%% Extract data arrays, wavelength, and pixel sizes
+data, wl, px_size = H5E.data_extract(paths[0], data_loc='/Datas/Data1')
+# remove spikes from the data
+data_despike = HSD.spike_removal_3d(data,width_threshold=20,prominence_threshold=300)
 #%% Visualize the data
 HSD.visual_data(data_Raman_1, wl_Raman_1) # plot all spectra in one figure
 maps_PL_1 = HSD.plot_maps(data_PL_1, wl_PL_1, px_size_PL_1, data_type='PL') # plot maps to check the features
