@@ -735,7 +735,8 @@ def jacobian_conversion_hsdata(original_data, xaxis):
     intensity = original_data / energy_axis[None,None,:] **2
     return intensity, energy_axis
 #%% tripple gaussian fitting to extract parameters and errors
-def gaussian_fit(data, xaxis, jacobian=False, func_name='triple_gaussian',initial_guesses=None,bounds=(-np.inf,np.inf), **kwargs):
+def gaussian_fit(data, xaxis, jacobian=False, func_name='triple_gaussian',
+                 initial_guesses=None,bounds=(-np.inf,np.inf), **kwargs):
     """
     Fit the PL spectrum of a single pixel with the triple Gaussian peaks
     :param: data (np.ndarray): the hyperspectral data
@@ -775,6 +776,73 @@ def gaussian_fit(data, xaxis, jacobian=False, func_name='triple_gaussian',initia
                 print('The fit failed at pixel [{}, {}]'.format(i, j))
                 fit_params[i, j, :] = 0
                 fit_errors[i, j, :] = 0
+    return fit_params, fit_errors
+#%%
+def gaussian_fit_parallel(data, xaxis, jacobian=False,
+                          func_name='triple_gaussian',
+                          initial_guesses=None,
+                          bounds=(-np.inf, np.inf),
+                          n_jobs=-1,
+                          verbose=0,
+                          **kwargs):
+    """
+    Parallelized Gaussian fitting over all (i,j) spectra.
+    """
+
+    # Jacobian conversion if needed
+    if jacobian:
+        spectra, energy_axis = jacobian_conversion_hsdata(data, xaxis=xaxis)
+    else:
+        spectra = data
+        energy_axis = xaxis
+
+    X, Y, Z = spectra.shape
+
+    # Choose correct fit function
+    if func_name == 'triple_gaussian':
+        func = triple_gaussian
+        n_params = 9
+    elif func_name == 'gaussian':
+        func = gaussian
+        n_params = 3
+    else:
+        raise ValueError("func_name must be 'triple_gaussian' or 'gaussian'")
+
+    # Storage arrays
+    fit_params = np.zeros((X, Y, n_params))
+    fit_errors = np.zeros((X, Y, n_params))
+
+    # ----- Worker function (executed in parallel) -----
+    def fit_single(i, j):
+        spectrum = spectra[i, j, :]
+        try:
+            popt, cov = curve_fit(func,
+                                  energy_axis,
+                                  spectrum,
+                                  p0=initial_guesses,
+                                  bounds=bounds,
+                                  **kwargs)
+
+            errors = np.sqrt(np.diag(cov))
+            return (i, j, popt, errors)
+
+        except Exception as e:
+            if verbose:
+                print(f"Fit failed at ({i}, {j}): {e}")
+            return (i, j, np.zeros(n_params), np.zeros(n_params))
+
+    # ----- Parallel execution -----
+    results = Parallel(n_jobs=n_jobs, verbose=verbose)(
+        delayed(fit_single)(i, j)
+        for i in range(X)
+        for j in range(Y)
+    )
+
+    # ----- Reassemble results -----
+    for (i, j, popt, errors) in results:
+        fit_params[i, j, :] = popt
+        fit_errors[i, j, :] = errors
+
     return fit_params, fit_errors
 #%% Plot spectra with the Gaussian fitting and the residuals at the given pixel
 def plot_gaussian_fit(data, xaxis, params, jacobian=False, func_name='triple_gaussian', px_YX=(0,0),
@@ -890,8 +958,8 @@ def intint_gaussian(data, xaxis,params,
     if jacobian:
         _, wls = jacobian_conversion_hsdata(data,xaxis)
         # flip the wls axis if it is in descending order
-        if wls[0] > wls[-1]:
-            wls = wls[::-1]
+    if wls[0] > wls[-1]:
+        wls = wls[::-1]
     intint_gaussian = np.zeros(map_shape[:2])
     # Loop through each pixel in the spatial dimensions
     for i in range(map_shape[0]):
