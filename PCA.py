@@ -31,8 +31,22 @@ from sklearn.decomposition import PCA
 def sklearn_PCA(data,ScreePlot=False,n_PCs=None,
                 saveplot=False, figname=None, savepath=None,
                 *args, **kwargs):
-    # flatten the datacube read by hyperspy
-    flat_data = stack_spectra_columnwise(data.data)
+    """
+    Perform PCA using sklearn on hyperspectral data.
+    :param data (np.ndarray): hyperspectral data
+    :param ScreePlot (bool): whether to plot the explained variance ratio
+    :param n_PCs (int, optional): number of principal components to consider for the scree plot
+    :param saveplot (bool): whether to save the scree plot
+    :param figname (str): name of the figure to save
+    :param savepath (str): path to save the figure
+    :param args : additional arguments for sklearn PCA
+    :param kwargs: additional arguments for sklearn PCA
+    :return:
+    pca : trained sklearn PCA object
+    component_spectra : array-like, shape (n_components, n_features)
+    """
+    # flatten the datacube to 2D (pixels × spectrum)
+    flat_data = stack_spectra_columnwise(data)
     # apply PCA
     pca = PCA(*args, **kwargs)
     pca.fit(flat_data)
@@ -71,7 +85,7 @@ def sklearn_PCA(data,ScreePlot=False,n_PCs=None,
 
     return pca, component_spectra
 #%% plot the PCA component spectra
-def plot_PCs(component_spectra, x_axis, component_idx=6,
+def plot_PCs(component_spectra, x_axis, component_idx,
              x_label='Raman shift / cm$^{-1}$', y_label='Intensity / a.u.',
              fontsize=12,labelpad=10, labelsize=12,
              savefig=False, figname=None, savepath=None):
@@ -81,10 +95,27 @@ def plot_PCs(component_spectra, x_axis, component_idx=6,
     Parameters:
         component_spectra : array-like, shape (n_components, n_features)
             The PCA component spectra.
+        x_axis : array-like, shape (n_features,)
+            The x-axis values.
         component_idx : int or list of int, optional
             If int, the first n components will be plotted.
-            If list, specific components will be plotted.
-
+            If list, specific components will be plotted, counting from 1.
+        x_label : str, optional
+            The label of the x-axis.
+        y_label : str, optional
+            The label of the y-axis.
+        fontsize : int, optional
+            The font size of the labels.
+        labelpad : int, optional
+            The labelpad of the labels.
+        labelsize : int, optional
+            The label size of the ticks.
+        savefig : bool, optional
+            Whether to save the figure.
+        figname : str, optional
+            The name of the figure to save.
+        savepath : str, optional
+            The path to save the figure.
     Returns:
         None
     """
@@ -93,12 +124,12 @@ def plot_PCs(component_spectra, x_axis, component_idx=6,
         indices = list(range(component_idx))
     elif isinstance(component_idx, list):
         # Plot specific components
-        indices = component_idx
+        indices = [idx - 1 for idx in component_idx]  # Convert to zero-based index
     else:
         raise ValueError("component_idx must be an int or a list of ints.")
     for idx in indices:
         fig, ax = plt.subplots()
-        ax.plot(x_axis,component_spectra[idx], label=f'PC {idx + 1}')
+        ax.plot(x_axis,component_spectra[idx], label=f'PC {idx+1}')
         ax.set_xlabel(x_label, fontsize=fontsize, labelpad=labelpad)
         ax.set_ylabel(y_label, fontsize=fontsize, labelpad=labelpad)
         # set the tick fontsize
@@ -107,7 +138,7 @@ def plot_PCs(component_spectra, x_axis, component_idx=6,
         plt.tight_layout()
         if savefig:
             if figname is None:
-                print(f"Warning: No figure name provided, using default 'PC{idx+1}'.")
+                print(f"Warning: No figure name provided, using default 'PC{idx}'.")
                 savename = f'PC{idx+1}'
             else:
                 savename = figname+f'_PC{idx+1}'
@@ -124,20 +155,17 @@ def reconstruct_data(data, pca, component_idx=None, component_list=None):
        Reconstruct data from PCA scores using a subset of components.
 
        Parameters:
-              data : LumiSpectrum object
+           data : array-like, shape (n_samples, n_features)
            pca : trained sklearn PCA object
-           X_pca : array-like, shape (n_samples, n_components)
-               PCA-transformed data (scores)
-            component_idx : int, optional
+           component_idx : int, optional
                    Number of components to use
            component_list : list of int, optional
                Specific component indices to use counting from 1
 
        Returns:
-           X_reconstructed : array-like, shape (n_samples, n_features)
-               Data reconstructed using selected components
+              datacube_reconstructed : np.ndarray
        """
-    flat_data = stack_spectra_columnwise(data.data)
+    flat_data = stack_spectra_columnwise(data)
     data_pca = pca.transform(flat_data)
     if component_idx is not None:
         # Select first n_first components
@@ -154,11 +182,9 @@ def reconstruct_data(data, pca, component_idx=None, component_list=None):
 
     # Reconstruct data
     data_reconstructed = np.dot(data_pca_sel, components_sel) + pca.mean_
-    datacube_reconstructed = unstack_spectra_columnwise(data_reconstructed, data.data.shape[0], data.data.shape[1])
+    datacube_reconstructed = unstack_spectra_columnwise(data_reconstructed, data.shape[0], data.shape[1])
 
-    rec_data = data.copy()
-    rec_data.data = datacube_reconstructed
-    return rec_data
+    return datacube_reconstructed
 
 #%% Score map
 # get the ideal scalebar length
@@ -216,22 +242,31 @@ def adjust_colorbar(data, bins=500, percentiles=(5, 95)):
 
     return lower_bound, upper_bound
 #%%
-def score_map(data, pca, component_index,cbar_adjust=False,
+def score_map(data, pca, component_index,
+              px_size,
+              cbar_adjust=False,
               fontsize=12,labelpad=10,
               *args, **kwargs):
     """
     Plot the score map of the given PC
-    :param data (LumiSpectrum): hyperspectral data
+    :param data (np.ndarray): hyperspectral data
     :param pca: trained sklearn PCA object
     :param component_index (int): the index of the principal component starting from 1
+    :param px_size (float): pixel size in micrometers
+    :param cbar_adjust (bool): whether to adjust the colorbar limits based on the data histogram, default is False
+    :param fontsize (int): font size for the scalebar label, default is 12
+    :param labelpad (int): labelpad for the scalebar label, default is 10
+    :param args: additional positional arguments for get_scalebar_length function
+    :param kwargs: additional keyword arguments for get_scalebar_length function
+    :return: score_map (2D np.ndarray): the score map of the given PC
     """
-    flat_data = stack_spectra_columnwise(data.data)
+    flat_data = stack_spectra_columnwise(data)
     data_pca = pca.transform(flat_data)
     # reshape the PCA scores to match the original data shape
-    data_pca_reshaped = unstack_spectra_columnwise(data_pca, data.data.shape[0], data.data.shape[1])
+    data_pca_reshaped = unstack_spectra_columnwise(data_pca, data.shape[0], data.shape[1])
     score_map = data_pca_reshaped[:,:, component_index - 1]  # component_index is starting from 1, so we need to subtract 1 for zero-based indexing
     # Get the scalebar length
-    len_in_pix, length, width = get_scalebar_length(score_map, data.axes_manager[0].scale, *args, **kwargs)
+    len_in_pix, length, width = get_scalebar_length(score_map, px_size, *args, **kwargs)
 
     fig, ax = plt.subplots()
     if cbar_adjust:
@@ -258,14 +293,14 @@ from scipy.linalg import svd
 def svd_PCA(data, ScreePlot=False, n_PCs=None, full_matrices=False):
     """
     Perform PCA using SVD.
-    :param data (LumiSpectrum): hyperspectral data
+    :param data (np.ndarray): hyperspectral data
     :param ScreePlot (bool): whether to plot the explained variance ratio
     :param n_PCs (int, optional): number of principal components to consider for the scree plot
     :param full_matrices (bool): whether to compute full matrices U and Vt
     :return: U, S, Vt, component_spectra, explained_variance_ratio
     """
     # flatten hyperspy datacube to 2D (pixels × spectrum)
-    flat_data = stack_spectra_columnwise(data.data)
+    flat_data = stack_spectra_columnwise(data)
     # mean center
     X = flat_data - flat_data.mean(axis=0)
 
@@ -304,13 +339,24 @@ def svd_PCA(data, ScreePlot=False, n_PCs=None, full_matrices=False):
     return U, S, Vt, component_spectra, explained_variance_ratio
 #%% reconstruct the data using SVD
 def reconstruct_data_svd(data, U, S, Vt, component_idx=None, component_list=None):
-    flat_data = stack_spectra_columnwise(data.data)
+    """
+    Reconstruct data from SVD scores using a subset of components.
+    :param data (np.ndarray): hyperspectral data
+    :param U (np.ndarray): left singular vectors
+    :param S (np.ndarray): singular values
+    :param Vt (np.ndarray): right singular vectors
+    :param component_idx : int, optional, the number of components to use, default: None
+    :param component_list : list of int, optional, the specific component indices to use counting from 1, default: None
+    :return:
+    datacube_reconstructed : np.ndarray
+    """
+    flat_data = stack_spectra_columnwise(data)
     X = flat_data - flat_data.mean(axis=0)
 
     if component_idx is not None:
         selected_indices = list(range(component_idx))
     elif component_list is not None:
-        selected_indices = component_list
+        selected_indices = [comp - 1 for comp in component_list]  # Convert to zero-based index
     else:
         raise ValueError("Either component_idx or component_list must be provided.")
 
@@ -322,17 +368,27 @@ def reconstruct_data_svd(data, U, S, Vt, component_idx=None, component_list=None
     X_reconstructed = U_sel @ S_sel @ Vt_sel + flat_data.mean(axis=0)
 
     datacube_reconstructed = unstack_spectra_columnwise(
-        X_reconstructed, data.data.shape[0], data.data.shape[1]
+        X_reconstructed, data.shape[0], data.shape[1]
     )
     return datacube_reconstructed
 
 #%% score map
-def score_map_svd(data, U, S, component_index, cbar_adjust=False, *args, **kwargs):
+def score_map_svd(data, U, S, component_index,
+                  px_size,
+                  cbar_adjust=False, *args, **kwargs):
     """
     Plot the score map using SVD results.
-    component_index starts from 1.
+    :param data (np.ndarray): hyperspectral data
+    :param U (np.ndarray): left singular vectors
+    :param S (np.ndarray): singular values
+    :param component_index (int): the index of the principal component starting from 1
+    :param px_size (float): pixel size in micrometers
+    :param cbar_adjust (bool): whether to adjust the colorbar limits based on the data histogram, default is False
+    :param args: additional positional arguments for get_scalebar_length function
+    :param kwargs: additional keyword arguments for get_scalebar_length function
+    :return: score_map (2D np.ndarray): the score map of the given PC
     """
-    flat_data = stack_spectra_columnwise(data.data)
+    flat_data = stack_spectra_columnwise(data)
     X = flat_data - flat_data.mean(axis=0)
 
     # Project onto PC
@@ -340,12 +396,12 @@ def score_map_svd(data, U, S, component_index, cbar_adjust=False, *args, **kwarg
 
     # reshape back
     scores_reshaped = unstack_spectra_columnwise(
-        scores[:, np.newaxis], data.data.shape[0], data.data.shape[1]
+        scores[:, np.newaxis], data.shape[0], data.shape[1]
     )[:, :, 0]
 
     # scale bar
     len_in_pix, length, width = get_scalebar_length(
-        scores_reshaped, data.axes_manager[0].scale, *args, **kwargs
+        scores_reshaped, px_size, *args, **kwargs
     )
 
     import matplotlib.pyplot as plt
