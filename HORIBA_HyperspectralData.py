@@ -46,6 +46,7 @@ def load_xml(file_path,remove_spikes=False,threshold='auto', remove_negatives=Fa
     :param threshold_factor (int): the factor to determine the threshold for removing spikes, default is 5
     :param remove_negatives (bool): whether to remove the negative values in the data, default is False
     :return:
+    data (LumiSpectrum): the loaded hyperspectral data
     '''
     data = hs.load(file_path, reader='JobinYvon')
     if remove_spikes:
@@ -63,15 +64,17 @@ def load_xml(file_path,remove_spikes=False,threshold='auto', remove_negatives=Fa
         else:
             xlabel = 'Wavelength / nm'
             ylabel = 'Intensity / a.u.'
-        visual_data(data, xlabel=xlabel, ylabel=ylabel)
+        visual_data(data.data, x_axis=data.axes_manager[2].axis, xlabel=xlabel, ylabel=ylabel)
     return data
 #%% visualize the hyperspectral data
-def visual_data(data, xlabel='Wavelength / nm', ylabel='PL intensity / a.u.',
+def visual_data(data,
+                x_axis,
+                xlabel='Wavelength / nm', ylabel='PL intensity / a.u.',
                 fontsize=12,labelpad=10, labelsize=12,
                 savefig=False, figname=None, savepath=None):
     """
     Plot all spectra of hyperspectral data in a single plot
-    :param data (np.ndarray): the 2D dataset
+    :param data (np.ndarray): the 3D dataset
     :param xlabel (str): the label of the x-axis
     :param ylabel (str): the label of the y-axis
     :param savefig (bool): whether to save the figure
@@ -80,9 +83,9 @@ def visual_data(data, xlabel='Wavelength / nm', ylabel='PL intensity / a.u.',
     :return:
     """
     fig, ax = plt.subplots(figsize=(10, 6))
-    for i in range(data.data.shape[0]):
-        for j in range(data.data.shape[1]):
-            ax.plot(data.axes_manager[2].axis, data.data[i, j, :])
+    for i in range(data.shape[0]):
+        for j in range(data.shape[1]):
+            ax.plot(x_axis, data[i, j, :])
     ax.set_xlabel(xlabel, fontsize=fontsize, labelpad=labelpad)
     ax.set_ylabel(ylabel, fontsize=fontsize, labelpad=labelpad)
     ax.tick_params(which='both', direction='in', right=True, top=True, labelsize=labelsize)
@@ -97,112 +100,102 @@ def visual_data(data, xlabel='Wavelength / nm', ylabel='PL intensity / a.u.',
 def normalize_data(data, norm_type='max',rewrite=False):
     """
     Normalize the hyperspectral data based on the given normalization type
-    :param data (LumiSpectrum): the hyperspectral data
+    :param data (ndarray): the 3d hyperspectral dataset
     :param norm_type (str): the type of normalization, either 'max' or 'sum'
-    :return: data (LumiSpectrum): the normalized hyperspectral data
+    :return: norm_data (ndarray): the normalized hyperspectral data
     """
     if rewrite:
-        norm_data = data
+        data1 = data
     else:
         # create a copy of the data to avoid modifying the original data
-        norm_data = copy.deepcopy(data)
+        data1 = copy.deepcopy(data)
     if norm_type == 'max':
-        norm_data.data = norm_data.data / np.max(norm_data.data,axis=2, keepdims=True)
+        norm_data = data1/ np.max(data1,axis=2, keepdims=True)
     elif norm_type == 'sum':
-        norm_data.data = norm_data.data / np.sum(data.data, axis=2, keepdims=True)
+        norm_data = data1 / np.sum(data1, axis=2, keepdims=True)
     else:
         raise ValueError('Normalization type must be either "max" or "sum"')
     return norm_data
 #%% extract mapping data from datacube
 # get integrated intensity of the hyperspectral data
-def get_intint(data, spectral_range=None, processed_data=None):
+def get_intint(data, xaxis, spectral_range=None):
     """
     Get the integrated intensity of the hyperspectral data over the given wavelength or wavenumber range
-    :param data (LumiSpectrum): hyperspectral data
+    :param data (ndarray): hyperspectral data
+    :param xaxis (np.ndarray): the wavelength or wavenumber axis
     :param spectral_range (tuple)(optional): the wavelength or wavenumber range, for example, (500, 700) in nm for PL
     :param processed_data (np.ndarray)(optional): the registered data
     :return: intint (np.ndarray): the integrated intensity map
     """
-    Spectr = data.axes_manager[2].axis
     if spectral_range is not None:
-        index1 = abs(Spectr - spectral_range[0]).argmin()
-        index2 = abs(Spectr - spectral_range[1]).argmin()
+        index1 = abs(xaxis - spectral_range[0]).argmin()
+        index2 = abs(xaxis- spectral_range[1]).argmin()
     else:
         index1 = 0
-        index2 = data.data.shape[2]-1
-    if processed_data is not None:
-        intint = processed_data[:,:,index1:index2].sum(axis=2)
-    else:
-        intint = data.data[:,:,index1:index2].sum(axis=2)
+        index2 = data.shape[2]-1
+    intint = data[:,:,index1:index2].sum(axis=2)
     return intint
 # get maximum intensity of each pixel
-def get_maxint(data, spectral_range=None, processed_data=None):
+def get_maxint(data, xaxis, spectral_range=None):
     """
     Get the maximum intensity of each pixel in the hyperspectral data over the given wavelength or wavenumber range
-    :param data (LumiSpectrum): hyperspectral data
+    :param data (np.ndarray): hyperspectral data
+    :param xaxis (np.ndarray): the wavelength or wavenumber axis
     :param spectral_range (tuple)(optional): the wavelength or wavenumber range, for example, (500, 700) in nm for PL
-    :param processed_data (np.ndarray)(optional): the registered data
     :return: maxint (np.ndarray): the maximum intensity map
     """
-    Spectr = data.axes_manager[2].axis
     if spectral_range is not None:
-        index1 = abs(Spectr - spectral_range[0]).argmin()
-        index2 = abs(Spectr - spectral_range[1]).argmin()
+        index1 = abs(xaxis - spectral_range[0]).argmin()
+        index2 = abs(xaxis - spectral_range[1]).argmin()
     else:
         index1 = 0
-        index2 = data.data.shape[2]-1
-    if processed_data is not None:
-        maxint = processed_data[:,:,index1:index2].max(axis=2)
-    else:
-        maxint = data.data[:,:,index1:index2].max(axis=2)
+        index2 = data.shape[2]-1
+
+    maxint = data[:,:,index1:index2].max(axis=2)
     return maxint
 # get the intensity at the given wavelength or wavenumber
-def get_int(data, wavelength, processed_data=None):
+def get_int(data, xaxis, wavelength):
     """
     Get the intensity at the given wavelength or wavenumber
-    :param data (LumiSpectrum): hyperspectral data
+    :param data (np.ndarray): hyperspectral data
+    :param xaxis (np.ndarray): the wavelength or wavenumber axis
     :param wavelength (float): the wavelength or wavenumber
     :param processed_data (np.ndarray)(optional): the registered data
     :return: int_map (np.ndarray): the intensity map at the given wavelength or wavenumber
     """
-    Spectr = data.axes_manager[2].axis
-    if processed_data is not None:
-        int = processed_data[:,:,abs(Spectr-wavelength).argmin()]
-    else:
-        int = data.data[:,:,abs(Spectr-wavelength).argmin()]
+    int = data.data[:,:,abs(xaxis-wavelength).argmin()]
     return int
 # get the centre of mass (COM) of the hyperspectral data
-def get_com(data, spectral_range=None, processed_data=None):
+def get_com(data, xaxis, spectral_range=None):
     """
     Get the centre of mass (COM) of the hyperspectral data over the given wavelength or wavenumber range
-    :param data (LumiSpectrum): hyperspectral data
+    :param data (np.ndarray): hyperspectral data
+    :param xaxis (np.ndarray): the wavelength or wavenumber axis
     :param spectral_range (tuple)(optional): the wavelength or wavenumber range, for example, (500, 700) in nm for PL
     :param processed_data (np.ndarray)(optional): the registered data
     :return: com (np.ndarray): the COM map
     """
-    Spectr = data.axes_manager[2].axis
     if spectral_range is not None:
-        index1 = abs(Spectr - spectral_range[0]).argmin()
-        index2 = abs(Spectr - spectral_range[1]).argmin()
+        index1 = abs(xaxis - spectral_range[0]).argmin()
+        index2 = abs(xaxis - spectral_range[1]).argmin()
     else:
         index1 = 0
-        index2 = data.data.shape[2]-1
-    if processed_data is not None:
-        com = np.sum(processed_data[:,:,index1:index2] * Spectr[index1:index2], axis=2) / np.sum(processed_data[:,:,index1:index2], axis=2)
-    else:
-        com = np.sum(data.data[:,:,index1:index2] * Spectr[index1:index2], axis=2) / np.sum(data.data[:,:,index1:index2], axis=2)
+        index2 = data.shape[2]-1
+    com = np.sum(data[:,:,index1:index2] * xaxis[index1:index2], axis=2) / np.sum(data[:,:,index1:index2], axis=2)
     return com
 #%% get ratio of peak intensities at given wavelengths or wavenumbers
-def get_ratio(data, wavelength1, wavelength2):
+def get_ratio(data, xaxis, wavelength1, wavelength2):
     '''
     Get the ratio of the intensity at two given wavelengths or wavenumbers
-    :param data:
-    :param wavelength1:
-    :param wavelength2:
+    :param data(ndarray): the hyperspectral data
+    :param xaxis(ndarray): the wavelength or wavenumber axis
+    :param wavelength1 (float): the wavelength or wavenumber
+    :param wavelength2 (float): the wavelength or wavenumber
     :return:
+    ratio (ndarray): the ratio map of the intensities at the two given wavelengths or wavenumbers
     '''
-    int1 = get_int(data, wavelength1)
-    int2 = get_int(data, wavelength2)
+    int1 = get_int(data, xaxis=xaxis,wavelength=wavelength1)
+    int2 = get_int(data, xaxis=xaxis,wavelength=wavelength2)
     # Avoid division by zero
     int2[int2 == 0] = 1e-10  # Set a small value to avoid division by zero
     ratio = int1 / int2
@@ -269,15 +262,16 @@ def energy2lambda(Spectr):
     return 1239.8 / Spectr
 #%% Plot a combination of integrated intensity map, maximum intensity map, and COM map.
 from skimage import exposure
-def plot_maps(data,spectral_range=None,data_type='PL',frac_scalebar=0.133335,
+def plot_maps(data,xaxis, px_size, spectral_range=None,data_type='PL',
+              frac_scalebar=0.133335,
               percentile_range=(5, 95),
               savefig=False, figname=None, savepath=None,
               **kwargs):
     """
     Plot a combination of integrated intensity map, maximum intensity map, and COM map.
-    :param data (LumiSpectrum): hyperspectral data
+    :param data (np.ndarray): hyperspectral data
+    :param xaxis (np.ndarray): the wavelength or wavenumber axis
     :param spectral_range (list)(optional): the wavelength or wavenumber range, for example, (500, 700) in nm for PL
-    :param processed_data (np.ndarray)(optional): the registered data
     :param data_type (str): the type of the data, either 'PL' or 'Raman'
     :param frac_scalebar (float): the fraction of the image length to be used for the scalebar, default is 0.133335 (13%)
     :param savefig (bool): whether to save the figure, default is False
@@ -285,9 +279,9 @@ def plot_maps(data,spectral_range=None,data_type='PL',frac_scalebar=0.133335,
     :param savepath (str)(optional): the path to save the figure, default is None
     :return:
     """
-    intint = get_intint(data, spectral_range=spectral_range, **kwargs)
-    maxint = get_maxint(data, spectral_range=spectral_range, **kwargs)
-    com = get_com(data, spectral_range=spectral_range, **kwargs)
+    intint = get_intint(data, xaxis=xaxis,spectral_range=spectral_range, **kwargs)
+    maxint = get_maxint(data, xaxis=xaxis,spectral_range=spectral_range, **kwargs)
+    com = get_com(data,xaxis=xaxis, spectral_range=spectral_range, **kwargs)
     # rescale intensity to adjust the contrast
     map_list = [intint, maxint, com]
     v_ranges = []
@@ -301,7 +295,7 @@ def plot_maps(data,spectral_range=None,data_type='PL',frac_scalebar=0.133335,
     com = exposure.equalize_hist(com, nbins=500)
     """
     # Get the scalebar length
-    len_in_pix, length, width = get_scalebar_length(intint, data.axes_manager[0].scale, percent=frac_scalebar)
+    len_in_pix, length, width = get_scalebar_length(intint, px_size, percent=frac_scalebar)
 
     fig, ax = plt.subplots(1, 3, figsize=(18, 5))
     # Plot the integrated intensity map
@@ -347,8 +341,8 @@ def plot_maps(data,spectral_range=None,data_type='PL',frac_scalebar=0.133335,
     return map_list
 
 #%% Plot an integrated intensity map
-def intint_map(data, data_type,
-               spectral_range=None, processed_data=None,
+def intint_map(data, xaxis, data_type, px_size,
+               spectral_range=None,
                frac_scalebar=0.133335,
                savefig=False, figname=None, savefile=False, filename=None, savepath=None,
                cbar_adj=True,
@@ -356,13 +350,14 @@ def intint_map(data, data_type,
                **cbar_kwargs):
     """
     Plot an integrated intensity map over the given wavelength or wavenumber range
-    :param data (LumiSpectrum): hyperspectral data
+    :param data (ndarray): hyperspectral data
+    :param xaxis (np.ndarray): the wavelength or wavenumber axis
+    :param px_size (float): the pixel size in micrometers
     :param spectral_range (tuple)(optional): the wavelength or wavenumber range, for example, (500, 700) in nm for PL
     :param data_type (str): the type of the data, either 'PL' or 'Raman'
-    :param processed_data (np.ndarray)(optional): the registered data
     :return: intint (np.ndarray): the integrated intensity map
     """
-    intint = get_intint(data, spectral_range=spectral_range, processed_data=processed_data)
+    intint = get_intint(data, xaxis=xaxis, spectral_range=spectral_range)
     """
     Spectr = data.axes_manager[2].axis
     if spectral_range is not None:
@@ -377,7 +372,7 @@ def intint_map(data, data_type,
         intint = data.data[:,:,index1:index2].sum(axis=2)
     """
     # Get the scalebar length
-    len_in_pix, length, width = get_scalebar_length(intint, data.axes_manager[0].scale, percent=frac_scalebar)
+    len_in_pix, length, width = get_scalebar_length(intint, px_size, percent=frac_scalebar)
 
     # Plot the map
     fig,ax = plt.subplots()
@@ -411,9 +406,9 @@ def intint_map(data, data_type,
     return intint
 
 #%%plot an intensity map(relative intensity map) at the given wavelength or wavenumber
-def int_map(original_data, wavelength,
+def int_map(data, xaxis, wavelength,px_size,
             frac_scalebar=0.133335,
-            processed_data=None,cmap='viridis',
+            cmap='viridis',
             cbar_adj=True, cbar_label='Intensity / a.u.',
             cbar_sci_notation=False,
             fontsize=12,labelpad=10,
@@ -421,14 +416,24 @@ def int_map(original_data, wavelength,
             **kwargs):
     """
     Plot an intensity map at the given wavelength or wavenumber
-    :param original_data (LumiSpectrum): original/only-reconstructed hyperspectral data,
-            if warped_data is given, the original data is just used for providing the spectral axis information
+    :param data (ndarray): hyperspectral data
+    :param xaxis (np.ndarray): the wavelength or wavenumber axis
+    :param px_size (float): the pixel size in micrometers
     :param wavelength (float): the wavelength or wavenumber
-    :param data_type (str): the type of the data: 'PL', 'Raman', 'NormPL', 'NormRaman'
-    :param processed_data (np.ndarray)(optional): the registered data or any data different from the original data
-    :return: int_map (np.ndarray): the intensity map at the given wavelength or wavenumber,
-                fig (matplotlib.figure.Figure): the figure object,
-                ax (matplotlib.axes._axes.Axes): the axes object,
+    :param frac_scalebar (float)(optional): the fraction of the scalebar length to the image length, default is 0.133335 (13%)
+    :param cmap (str)(optional): the colormap, default is 'viridis'
+    :param cbar_adj (bool)(optional): whether to adjust the colorbar, default is True
+    :param cbar_label (str)(optional): the label of the colorbar, default is 'Intensity / a.u.'
+    :param cbar_sci_notation (bool)(optional): whether to use scientific notation for the colorbar, default is False
+    :param fontsize (int)(optional): the font size of the colorbar label, default is 12
+    :param labelpad (int)(optional): the labelpad of the colorbar label, default is 10
+    :param savefig (bool)(optional): whether to save the figure, default is False
+    :param figname (str)(optional): the name of the figure, default is None
+    :param savefile (bool)(optional): whether to save the intensity map as a text file, default is False
+    :param filename (str)(optional): the name of the text file, default is None
+    :param savepath (str)(optional): the path to save the figure and text file, default is None
+    :param kwargs (dict)(optional): keyword arguments for adjust_colorbar function
+    :return: int_map (np.ndarray): the intensity map at the given wavelength or wavenumber
     """
     """
     Spectr = original_data.axes_manager[2].axis
@@ -437,9 +442,9 @@ def int_map(original_data, wavelength,
     else:
         int_map = original_data.data[:,:,abs(Spectr-wavelength).argmin()]
     """
-    int_map = get_int(original_data, wavelength, processed_data=processed_data)
+    int_map = get_int(data, xaxis=xaxis, wavelength=wavelength)
     # Get the scalebar length
-    len_in_pix, length, width = get_scalebar_length(int_map, original_data.axes_manager[0].scale, percent=frac_scalebar)
+    len_in_pix, length, width = get_scalebar_length(int_map, px_size, percent=frac_scalebar)
 
     fig, ax = plt.subplots()
     if cbar_adj:
@@ -474,7 +479,8 @@ def int_map(original_data, wavelength,
             np.savetxt(savepath+filename+'.txt', int_map)
     return int_map
 #%% plot a ratio map of two intensity maps at the given wavelengths or wavenumbers
-def ratio_map(original_data, wavelength1, wavelength2, data_type,
+def ratio_map(data, xaxis, wavelength1, wavelength2,px_size,
+              data_type,
                 frac_scalebar=0.133335,
                 cbar_adj=True,
                 fontsize=12,labelpad=10,
@@ -482,25 +488,28 @@ def ratio_map(original_data, wavelength1, wavelength2, data_type,
                 **kwargs):
     """
     Plot a ratio map of two intensity maps at the given wavelengths or wavenumbers
-    :param original_data:
-    :param wavelength1:
-    :param wavelength2:
-    :param data_type:
-    :param frac_scalebar:
-    :param cbar_adj:
-    :param fontsize:
-    :param labelpad:
-    :param savefig:
-    :param figname:
-    :param savefile:
-    :param filename:
-    :param savepath:
-    :param kwargs:
+    :param data (ndarray): hyperspectral data
+    :param xaxis (np.ndarray): the wavelength or wavenumber axis
+    :param wavelength1 (float): the first wavelength or wavenumber
+    :param wavelength2 (float): the second wavelength or wavenumber
+    :param px_size (float): the pixel size in micrometers
+    :param data_type (str): the type of the data, either 'PL' or 'Raman'
+    :param frac_scalebar (float)(optional): the fraction of the scalebar length to the image length, default is 0.133335 (13%)
+    :param cbar_adj (bool)(optional): whether to adjust the colorbar, default is True
+    :param fontsize (int)(optional): the font size of the colorbar label, default is 12
+    :param labelpad (int)(optional): the labelpad of the colorbar label, default is 10
+    :param savefig (bool)(optional): whether to save the figure, default is False
+    :param figname (str)(optional): the name of the figure, default is None
+    :param savefile (bool)(optional): whether to save the ratio map as a text file, default is False
+    :param filename (str)(optional): the name of the text file, default is None
+    :param savepath (str)(optional): the path to save the figure and text file, default is None
+    :param kwargs (dict)(optional): keyword arguments for adjust_colorbar function
     :return:
+    ratio (np.ndarray): the ratio map of the two intensity maps at the given wavelengths or wavenumbers
     """
-    ratio = get_ratio(original_data, wavelength1, wavelength2)
+    ratio = get_ratio(data, wavelength1, wavelength2)
     # Get the scalebar length
-    len_in_pix, length, width = get_scalebar_length(ratio, original_data.axes_manager[0].scale, percent=frac_scalebar)
+    len_in_pix, length, width = get_scalebar_length(ratio, px_size, percent=frac_scalebar)
     fig, ax = plt.subplots()
     if cbar_adj:
         vmin, vmax = adjust_colorbar(ratio, **kwargs)
@@ -536,10 +545,15 @@ def plot_colormap(data, scale=None, frac_scalebar=0.133335,
     """
     Plot the colormap of the hyperspectral data
     :param data (np.ndarray): the hyperspectral data
-    :param scale (float)(optional): used for the scalebar of the colormap, default is None
+    :param scale (float)(optional): the scale to be used for the scalebar of the colormap, default is None
+    :param frac_scalebar (float)(optional): the fraction of the scalebar length to the image length, default is 0.133335 (13%)
+    :param fontsize (int)(optional): the font size of the colorbar label, default is 12
+    :param labelpad (int)(optional): the labelpad of the colorbar label, default is 10
     :param cbar_adj (bool)(optional): whether to adjust the colorbar, default is True
     :param cbar_label (str)(optional): the label of the colorbar, default is None
     :param save_path (str)(optional): the path to save the figure, default is None
+    :param sci_notation_cbar (bool)(optional): whether to use scientific notation for the colorbar, default is False
+    :param kwargs (dict)(optional): keyword arguments for adjust_colorbar function
     :return: None
     """
     fig, ax = plt.subplots()
@@ -578,7 +592,7 @@ def triple_gaussian(x, amp1, cen1, wid1, amp2, cen2, wid2, amp3, cen3, wid3):
             amp2 * np.exp(-(x - cen2)**2 / (2 * wid2**2)) +
             amp3 * np.exp(-(x - cen3)**2 / (2 * wid3**2)))
 #%% jacobian conversion for the spectral data
-def jacobian_conversion(data, wl,ylabel='PL intensity / a.u.',plot=False):
+def jacobian_conversion(data, xaxis, ylabel='PL intensity / a.u.',plot=False):
     """
     Convert the wavelength axis of the spectral data to energy axis, and also convert the intensity using the Jacobian conversion
     Note that h*c is ignored in the conversion, so the intensity is not in absolute units.
@@ -590,7 +604,7 @@ def jacobian_conversion(data, wl,ylabel='PL intensity / a.u.',plot=False):
     h = 6.62607015e-34  # Planck constant in J.s
     c = 3.0e8  # Speed of light in m/s
     eV = 1.602176634e-19  # 1 eV in J
-    energy_axis = h * c / (wl * 1e-9) / eV
+    energy_axis = h * c / (xaxis * 1e-9) / eV
     # Convert the intensity using the Jacobian conversion
     intensity = data / energy_axis**2
     spectrum_converted = [energy_axis, intensity]
@@ -604,67 +618,51 @@ def jacobian_conversion(data, wl,ylabel='PL intensity / a.u.',plot=False):
 
     return spectrum_converted
 #%% Jacobian conversion for the hyperspectral data
-def jacobian_conversion_hsdata(hsdata, copy=False, rewrite=False):
+def jacobian_conversion_hsdata(original_data, xaxis):
     """
     Convert the wavelength axis of the hyperspectral data to energy axis, and also convert the intensity using the Jacobian conversion
     Note that h*c is ignored in the conversion, so the intensity is not in absolute units.
-    :param data (LumiSpectrum): the hyperspectral data
+    :param original_data (np.ndarray): the hyperspectral data
     :return: data3d (np.ndarray): the hyperspectral data with the energy axis and converted intensity
              energy_axis (np.ndarray): the energy axis of the hyperspectral data
     """
-    wl = hsdata.axes_manager[2].axis
     # Convert the wavelength axis to energy axis
     h = 6.62607015e-34  # Planck constant in J.s
     c = 3.0e8  # Speed of light in m/s
     eV = 1.602176634e-19  # 1 eV in J
-    energy_axis = h * c / (wl * 1e-9) / eV
+    energy_axis = h * c / (xaxis * 1e-9) / eV
     # Convert the intensity using the Jacobian conversion
-    intensity = hsdata.data / energy_axis[None,None,:] **2
-    if copy:
-        hsdata_new = copy.deepcopy(hsdata)
-        hsdata_new.data = intensity
-        # renew the metadata
-        hsdata_new.axes_manager[2].name = 'Energy'
-        hsdata_new.axes_manager[2].units = 'eV'
-        hsdata_new.axes_manager[2].axis = energy_axis
-        hsdata_new.axes_manager[2].size = energy_axis.size
-        return hsdata_new, energy_axis
-    if rewrite:
-        hsdata.data = intensity
-        # renew the metadata
-        hsdata.axes_manager[2].name = 'Energy'
-        hsdata.axes_manager[2].units = 'eV'
-        hsdata.axes_manager[2].axis = energy_axis
-        hsdata.axes_manager[2].size = energy_axis.size
-        return hsdata, energy_axis
-    else:
-        return intensity, energy_axis
+    intensity = original_data / energy_axis[None,None,:] **2
+    return intensity, energy_axis
 #%% tripple gaussian fitting to extract parameters and errors
-def gaussian_fit(data, jacobian=False, func_name='triple_gaussian',initial_guesses=None,bounds=(-np.inf,np.inf), **kwargs):
+def gaussian_fit(data, xaxis, jacobian=False, func_name='triple_gaussian',initial_guesses=None,bounds=(-np.inf,np.inf), **kwargs):
     """
     Fit the PL spectrum of a single pixel with the triple Gaussian peaks
-    :param data (LumiSpectrum): the original (or reconstructed) hyperspectral data read by hyperspy
-    :param processed_data (np.ndarray): the warped hyperspectral data
+    :param: data (np.ndarray): the hyperspectral data
+    :param xaxis (np.ndarray): the wavelength or wavenumber axis
+    :param jacobian (bool): whether to perform the Jacobian conversion
+    :param func_name (str): the name of the fitting function, either 'triple_gaussian' or 'gaussian'
     :param initial_guesses (list): the initial guesses for the Gaussian parameters
+    :param bounds (tuple): the bounds for the Gaussian parameters
     :return: params (np.ndarray): the Gaussian parameters,
                 errors (np.ndarray): the errors of the Gaussian parameters
     """
     if jacobian:
-        spectra, energy_axis = jacobian_conversion_hsdata(data, copy=False, rewrite=False)
+        spectra, energy_axis = jacobian_conversion_hsdata(data,xaxis=xaxis)
     else:
-        spectra = data.data
-        energy_axis = data.axes_manager[2].axis
+        spectra = data
+        energy_axis = xaxis
     if func_name == 'triple_gaussian':
         func = triple_gaussian
-        fit_params = np.zeros((data.data.shape[0], data.data.shape[1], 9))
-        fit_errors = np.zeros((data.data.shape[0], data.data.shape[1], 9))
+        fit_params = np.zeros((data.shape[0], data.shape[1], 9))
+        fit_errors = np.zeros((data.shape[0], data.shape[1], 9))
     elif func_name == 'gaussian':
         func = gaussian
-        fit_params = np.zeros((data.data.shape[0], data.data.shape[1], 3))
-        fit_errors = np.zeros((data.data.shape[0], data.data.shape[1], 3))
+        fit_params = np.zeros((data.shape[0], data.shape[1], 3))
+        fit_errors = np.zeros((data.shape[0], data.shape[1], 3))
 
-    for i in range(data.data.shape[0]):
-        for j in range(data.data.shape[1]):
+    for i in range(data.shape[0]):
+        for j in range(data.shape[1]):
             spectrum = spectra[i, j, :]
             try:
                 # Fit the spectrum with the triple Gaussian function
@@ -679,23 +677,30 @@ def gaussian_fit(data, jacobian=False, func_name='triple_gaussian',initial_guess
                 fit_errors[i, j, :] = 0
     return fit_params, fit_errors
 #%% Plot spectra with the Gaussian fitting and the residuals at the given pixel
-def plot_gaussian_fit(data, params, jacobian=False, func_name='triple_gaussian', px_YX=(0,0),
+def plot_gaussian_fit(data, xaxis, params, jacobian=False, func_name='triple_gaussian', px_YX=(0,0),
                       residual_plot=False,
                       fontsize=12,labelpad=10, labelsize=12,
                       save_path=None):
     """
     Plot the spectrum with the triple Gaussian fitting and the residuals at the given pixel
-    :param original_data (LumiSpectrum): the original hyperspectral data
+    :param data (np.ndarray): the hyperspectral data
+    :param xaxis (np.ndarray): the wavelength or wavenumber axis
     :param params (np.ndarray): the Gaussian parameters
+    :param jacobian (bool): whether to perform the Jacobian conversion
+    :param func_name (str): the name of the fitting function, either 'triple_gaussian' or 'gaussian'
+    :param residual_plot (bool): whether to plot the residuals
     :param px_YX (tuple): the coordinates of the pixel in the format (y,x)
+    :param fontsize (int): the font size of the figure
+    :param labelpad (int): the labelpad of the figure
+    :param labelsize (int): the label size of the figure
     :param save_path (str)(optional): the path to save the figure
     :return: None
     """
     if jacobian:
-        spectra, x_axis = jacobian_conversion_hsdata(data, copy=False, rewrite=False)
+        spectra, x_axis = jacobian_conversion_hsdata(data,xaxis=xaxis)
     else:
-        spectra = data.data
-        x_axis = data.axes_manager[2].axis
+        spectra = data
+        x_axis = xaxis
     spectrum = spectra[px_YX[0], px_YX[1], :]
     params_pixel = params[px_YX[0], px_YX[1], :]
     if func_name == 'triple_gaussian':
@@ -744,30 +749,46 @@ def plot_gaussian_fit(data, params, jacobian=False, func_name='triple_gaussian',
     return None
 #%% Step2: Plot the integrated intensity map of the individual Gaussian peak over the entire spectral range
 from scipy import integrate
-def plot_intint_gaussian(original_data,params,cbar_label='PL integrated intensity / a.u.',
-                         jacobian=False,
-                         cbar_adj=True, ROI=None,
-                         frac_scalebar=0.133335,
-                         fontsize=12,labelpad=10,
-                         sum_threshold=None,
-                         savefig=False, figname=None,
-                         savefile=False, filename=None,
-                         save_path=None,
-                         **kwargs):
+def intint_gaussian(data, xaxis,params,
+                    jacobian=False,
+                    plot=False,
+                    px_size = 0.5,
+                     cbar_label='PL integrated intensity / a.u.',
+                     cbar_adj=True, ROI=None,
+                     frac_scalebar=0.133335,
+                     fontsize=12,labelpad=10,
+                     sum_threshold=None,
+                     savefig=False, figname=None,
+                     savefile=False, filename=None,
+                     save_path=None,
+                     **kwargs):
     """
     Plot the integrated intensity maps of the individual Gaussian peaks over the entire spectral range
-    :param original_data (LumiSpectrum): the original hyperspectral data used to provide the scale information
-    :param intint_gaussian (np.ndarray): the integrated intensity map of the individual Gaussian peaks
+    :param data (np.ndarray): the hyperspectral data
+    :param xaxis (np.ndarray): the wavelength or energy axis
+    :param params (np.ndarray): the Gaussian parameters
+    :param jacobian (bool): whether to perform the Jacobian conversion
+    :param plot (bool): whether to plot the figure
+    :param px_size (float): the pixel size in um
+    :param cbar_adj (bool): whether to adjust the colorbar
     :param cbar_label (str): the label of the colorbar
     :param ROI (tuple)(optional): the region of interest (ROI) in the format (x, y, width, height)
+    :param frac_scalebar (float): the fraction of the image length to be used for the scalebar, default is 0.133335 (13%)
+    :param fontsize (int): the font size of the colorbar label
+    :param labelpad (int): the labelpad of the colorbar label
+    :param sum_threshold (float)(optional): the threshold for summing the intensity maps
+    :param savefig (bool): whether to save the figure
+    :param figname (str): the name of the figure
+    :param savefile (bool): whether to save the intensity map as a text file
+    :param filename (str): the name of the text file
     :param save_path (str)(optional): the path to save the figure
-    :return: None
+    :return: intint_gaussian (np.ndarray): the integrated intensity map of the individual Gaussian peak
     """
     # Initialize intensity maps for each Gaussian
-    wls = original_data.axes_manager[2].axis
-    map_shape = original_data.data.shape
+    wls = xaxis
+    map_shape = data.shape
     if jacobian:
-        _, wls = jacobian_conversion_hsdata(original_data, copy=False, rewrite=False)
+        _, wls = jacobian_conversion_hsdata(data,xaxis)
         # flip the wls axis if it is in descending order
         if wls[0] > wls[-1]:
             wls = wls[::-1]
@@ -778,37 +799,38 @@ def plot_intint_gaussian(original_data,params,cbar_label='PL integrated intensit
             #intint_gaussian[i, j] = gaussian_integral(params[i, j, 0], params[i, j, 2])
             intint_gaussian[i, j] = integrate.quad(gaussian, wls[0], wls[-1],
                                                    args=(params[i, j, 0], params[i, j, 1], params[i, j, 2]))[0]
-            spectrum = original_data.data[i, j, :]
+            spectrum = data[i, j, :]
             if sum_threshold is not None:
                 if np.sum(spectrum) < sum_threshold:
                     intint_gaussian[i, j] = 0 # use the sum of the intensity to filter out the bad pixels or background
     # integrate a single Gaussian peak
     if ROI is not None:
         intint_gaussian = intint_gaussian[ROI[1]:ROI[1]+ROI[3], ROI[0]:ROI[0]+ROI[2]]
-    fig, ax = plt.subplots()
-    if cbar_adj:
-        vmin, vmax = adjust_colorbar(intint_gaussian, **kwargs)
-        cmap = ax.imshow(intint_gaussian, vmin=vmin, vmax=vmax)
-    else:
-        cmap = ax.imshow(intint_gaussian)
-    ax.set_axis_off()
-    len_in_pix, length, width = get_scalebar_length(intint_gaussian, original_data.axes_manager[0].scale,
-                                                     percent=frac_scalebar)
-    scalebar = AnchoredSizeBar(ax.transData, len_in_pix, str(length) + ' μm', 4, pad=1,
-                               borderpad=0.1, sep=5, frameon=False, size_vertical=width, color='white',
-                               fontproperties={'size': 15, 'weight': 'bold'})
-    ax.add_artist(scalebar)
-    fmt = matplotlib.ticker.ScalarFormatter(useMathText=True)
-    fmt.set_powerlimits((0, 0))
-    cbar = fig.colorbar(cmap, ax=ax, format=fmt)
-    cbar.set_label(cbar_label, fontsize=fontsize, labelpad=labelpad)
-    plt.tight_layout()
-    if savefig:
-        if figname is None:
-            print('Please provide a figure name')
+    if plot:
+        fig, ax = plt.subplots()
+        if cbar_adj:
+            vmin, vmax = adjust_colorbar(intint_gaussian, **kwargs)
+            cmap = ax.imshow(intint_gaussian, vmin=vmin, vmax=vmax)
         else:
-            plt.savefig(save_path+figname+'.png', transparent=True, dpi=300)
-    plt.show()
+            cmap = ax.imshow(intint_gaussian)
+        ax.set_axis_off()
+        len_in_pix, length, width = get_scalebar_length(intint_gaussian, px_size,
+                                                         percent=frac_scalebar)
+        scalebar = AnchoredSizeBar(ax.transData, len_in_pix, str(length) + ' μm', 4, pad=1,
+                                   borderpad=0.1, sep=5, frameon=False, size_vertical=width, color='white',
+                                   fontproperties={'size': 15, 'weight': 'bold'})
+        ax.add_artist(scalebar)
+        fmt = matplotlib.ticker.ScalarFormatter(useMathText=True)
+        fmt.set_powerlimits((0, 0))
+        cbar = fig.colorbar(cmap, ax=ax, format=fmt)
+        cbar.set_label(cbar_label, fontsize=fontsize, labelpad=labelpad)
+        plt.tight_layout()
+        if savefig:
+            if figname is None:
+                print('Please provide a figure name')
+            else:
+                plt.savefig(save_path+figname+'.png', transparent=True, dpi=300)
+        plt.show()
 
     if savefile:
         if filename is None:
@@ -819,48 +841,36 @@ def plot_intint_gaussian(original_data,params,cbar_label='PL integrated intensit
     return intint_gaussian
 #%% Plot the centre of mass map
 # Calculate and plot the COM of the PL spectrum for all pixels using vectorized operations
-def plot_com_map(original_data, processed_data=None, spectral_range=None, params_ROI=None,data_type='PL',
+def plot_com_map(data,xaxis, px_size,
+                 spectral_range=None, params_ROI=None,
+                 data_type='PL',int_unit='nm',
                  cbar_adjust=True,
                  fontsize=12,labelpad=10,
                  frac_scalebar=0.133335,save_path=None,
                  **kwargs):
     """
     Plot the centre of mass (COM) map of the PL spectrum for all pixels
-    :param original_data (LumiSpectrum): the original/reconstructed hyperspectral data
-    :param processed_data (np.ndarray): the warped hyperspectral data
-    :param lambda1 (float)(optional): the lower limit of the wavelength range for the COM calculation
-    :param lambda2 (float)(optional): the upper limit of the wavelength range for the COM calculation
+    :param data (np.ndarray): the hyperspectral data
+    :param xaxis (np.ndarray): the wavelength or wavenumber axis
+    :param px_size (float): the pixel size in micrometers
+    :param spectral_range (tuple)(optional): the range of the wavelength or wavenumber axis
     :param params_ROI (tuple)(optional): the region of interest (ROI) in the format (x, y, width, height)
     :param data_type (str): the type of the data, either 'PL' or 'Raman'
+    :param int_unit (str)(optional): the unit of the intensity, default is 'nm' for PL
+    :param cbar_adjust (bool)(optional): whether to adjust the colorbar, default is True
+    :param fontsize (int)(optional): the font size of the colorbar label, default is 12
+    :param labelpad (int)(optional): the labelpad of the colorbar, default is 10
+    :param frac_scalebar (float)(optional): the fraction of the scalebar length to the image length, default is 0.133335 (13%)
     :param save_path (str)(optional): the path to save the figure
     :return: com_map (np.ndarray): the COM map
     """
-    com_map = get_com(original_data, spectral_range=spectral_range, processed_data=processed_data)
-    '''
-    if spectral_range is not None:
-        lambda1, lambda2 = spectral_range
-        # lambda1 and lambda2 are the wavelength range for the COM calculation
-        index1 = abs(original_data.axes_manager[2].axis-lambda1).argmin()
-        index2 = abs(original_data.axes_manager[2].axis-lambda2).argmin()
-    else:
-        index1 = 0
-        index2 = original_data.data.shape[2] - 1
-    if processed_data is not None:
-        intensities = processed_data[:,:,index1:index2]
-    else:
-        intensities = original_data.data[:,:,index1:index2]
-    wavelength = original_data.axes_manager[2].axis[index1:index2]
-    # Calculating COM for all pixels using vectorized operations
-    numerator = np.sum(wavelength * intensities, axis=2)
-    denominator = np.sum(intensities, axis=2)
-    com_map = numerator / denominator
-    '''
+    com_map = get_com(data, xaxis, spectral_range=spectral_range)
     if data_type == 'PL':
         #convert wavelength to energy
         #com_map = 1239.8 / com_map
-        cbarlabel = f'PL center of mass / {original_data.axes_manager[2].units}'
+        cbarlabel = f'{data_type} center of mass / {int_unit}'
     elif data_type == 'Raman':
-        cbarlabel = 'Raman center of mass / cm$^{-1}$'
+        cbarlabel = '{} peak center of mass / cm$^{-1}$'.format(data_type)
     # check if the is NaN and replace it with zero
     com_map = np.nan_to_num(com_map)
     fig, ax = plt.subplots()
@@ -872,13 +882,13 @@ def plot_com_map(original_data, processed_data=None, spectral_range=None, params
     else:
         cmap = ax.imshow(com_map)
     ax.set_axis_off()
-    len_in_pix, length, width = get_scalebar_length(com_map, original_data.axes_manager[0].scale,
+    len_in_pix, length, width = get_scalebar_length(com_map, px_size,
                                                      percent=frac_scalebar)
     scalebar = AnchoredSizeBar(ax.transData, len_in_pix, str(length) + ' μm', 4, pad=1,
                                borderpad=0.1, sep=5, frameon=False, size_vertical=width, color='white',
                                fontproperties={'size': 15, 'weight': 'bold'})
     ax.add_artist(scalebar)
-    cbar = fig.colorbar(cmap, ax=ax, format='%.1f')
+    cbar = fig.colorbar(cmap, ax=ax, format='%.2f')
     cbar.set_label(cbarlabel, fontsize=fontsize, labelpad=labelpad)
     plt.tight_layout()
     if save_path is not None:
@@ -957,7 +967,7 @@ def select_point(data):
     print(f"Selected pixel: {coords}")
     return coords
 #%% Mark points of interest on the map
-def point_marker(map_data,original_data, XY,cbarlabel='Intensity / a.u.',frac_scalebar=0.133335,
+def point_marker(map_data,px_size, XY,cbarlabel='Intensity / a.u.',frac_scalebar=0.133335,
                  fontsize=12,labelpad=10,colorseq='Dark2',colors_udef=None,
                  marksize=15,markeredgewidth=3,
                  cmap='viridis',
@@ -967,16 +977,26 @@ def point_marker(map_data,original_data, XY,cbarlabel='Intensity / a.u.',frac_sc
     """
     Mark the points of interest on the map
     :param map_data (np.ndarray): the dataset of map
-    :param original_data (LumiSpectrum): the original data read by hyperspy used to provide the scale information
-    :param YX (list): the list of the coordinates of the points of interest (Y,X)
+    :param px_size (float): the pixel size in micrometers
+    :param XY (list): the list of the coordinates of the points of interest (X,Y)
     :param cbarlabel (str): the label of the colorbar
+    :param frac_scalebar (float): the fraction of the scalebar length to the image length
+    :param fontsize (int): the font size of the colorbar label
+    :param labelpad (int): the labelpad of the colorbar label
+    :param colorseq (str): the color sequence to use for the markers
+    :param colors_udef (list)(optional): the user-defined colors for the markers
+    :param marksize (int): the size of the markers
+    :param markeredgewidth (int): the edge width of the markers
+    :param cmap (str): the colormap to use for the map
+    :param cbar_adjust (bool): whether to adjust the colorbar
+    :param cbar_sci_notation (bool): whether to use scientific notation for the colorbar
     :param save_path (str)(optional): the path to save the figure
     """
     # define scalebar
     colors = mpl.color_sequences[colorseq]  # use the color sequence from matplotlib
     if colors_udef is not None:
         colors = colors_udef
-    len_in_pix, length, width = get_scalebar_length(map_data, original_data.axes_manager[0].scale,
+    len_in_pix, length, width = get_scalebar_length(map_data, px_size,
                                                      percent=frac_scalebar)
     fig,ax = plt.subplots()
     if cbar_adjust:
@@ -1005,7 +1025,7 @@ def point_marker(map_data,original_data, XY,cbarlabel='Intensity / a.u.',frac_sc
     plt.show()
 
 #%% Extract the spectrum at the points of interest and plot them on the same figure
-def Spectrum_extracted(original_data, XY, data_type,
+def Spectrum_extracted(data, xaxis, XY, data_type,
                        jacobian=False, xlabel_PL='Wavelength / nm',ylabel=None,
                        major_locator=50,n_minor_locator=2,
                        linewidth=2,
@@ -1015,17 +1035,30 @@ def Spectrum_extracted(original_data, XY, data_type,
                        x_lim=None,y_lim=None,save_path=None):
     """
     Plot the spectrum at the points of interest on the same figure
-    :param original_data (LumiSpectrum): hyperspectral data read by Hyperspy
+    :param data (np.ndarray): the hyperspectral data
+    :param xaxis (np.ndarray): the wavelength or wavenumber axis
     :param XY (tuple or list): the coordinates of the points of interest (X, Y) or the list of the coordinates of the points of interest (X,Y)
     :param data_type (str): the type of the data, either 'PL' or 'Raman'
+    :param jacobian (bool): whether to perform the Jacobian conversion
+    :param xlabel_PL (str): the label of the x-axis for PL data
+    :param ylabel (str)(optional): the label of the y-axis
+    :param major_locator (int)(optional): the major locator for the x-axis
+    :param n_minor_locator (int)(optional): the number of minor locators for the x-axis
+    :param linewidth (int)(optional): the linewidth of the lines
+    :param fontsize (int)(optional): the font size of the labels
+    :param labelpad (int)(optional): the labelpad of the labels
+    :param labelsize (int)(optional): the label size of the ticks
+    :param sci_notation_y (bool)(optional): whether to use scientific notation for the y-axis
+    :param colorseq (str)(optional): the color sequence to use for the markers
+    :param colors_udef (list)(optional): the user-defined colors for the markers
     :param x_lim (list)(optional): the x limit of the plot
     :param y_lim (list)(optional): the y limit of the plot
-    :return: fig (matplotlib.figure.Figure): the figure object,
-                ax (matplotlib.axes._axes.Axes): the axes object
+    :param save_path (str)(optional): the path to save the figure
+    :return: None
     """
     colors = mpl.color_sequences[colorseq]
-    Spectr = original_data.axes_manager[2].axis
-    intensities = original_data.data
+    Spectr = xaxis
+    intensities = data
     if x_lim is not None:
         x1 = np.argmin(np.abs(Spectr - x_lim[0]))
         x2 = np.argmin(np.abs(Spectr - x_lim[1]))
@@ -1069,7 +1102,7 @@ def Spectrum_extracted(original_data, XY, data_type,
         plt.savefig(save_path,transparent=True,dpi=300)
     plt.show()
 #%% Plot an average spectrum
-def avg_spectrum(data, data_type,
+def avg_spectrum(data,xaxis, data_type,
                  jacobian=False, xlabel_PL='Wavelength / nm',ylabel = None,
                  major_locator=50,n_minor_locator=2,params_ROI=None,
                  sci_notation_y=True,
@@ -1079,22 +1112,36 @@ def avg_spectrum(data, data_type,
                  savefile=False, filename=None, save_path=None):
     """
     Plot the average spectrum over the whole map
-    :param data (LumiSpectrum): hyperspectral data
+    :param data (np.ndarray): the hyperspectral data
+    :param xaxis (np.ndarray): the wavelength or wavenumber axis
     :param data_type (str): the type of the data, either 'PL' or 'Raman'
+    :param jacobian (bool): whether to perform the Jacobian conversion
+    :param xlabel_PL (str): the label of the x-axis for PL data
+    :param ylabel (str)(optional): the label of the y-axis
     :param major_locator (int): the major locator for the x-axis
     :param n_minor_locator (int): the minor locator for the x-axis
     :param params_ROI (tuple)(optional): the region of interest (ROI) in the format (x, y, width, height)
+    :param sci_notation_y (bool)(optional): whether to use scientific notation for the y-axis
+    :param xlim (tuple)(optional): the limit of the x axis
+    :param ylim (tuple)(optional): the limit of the y axis
+    :param fontsize (int)(optional): the font size of the labels
+    :param labelpad (int)(optional): the labelpad of the labels
+    :param labelsize (int)(optional): the label size of the ticks
+    :param savefig (bool)(optional): whether to save the figure
+    :param figname (str)(optional): the name of the figure
+    :param savefile (bool)(optional): whether to save the figure
+    :param filename (str)(optional): the name of the file
     :param save_path (str)(optional): the path to save the figure
     :return:
         avg_intens (np.ndarray): the average intensity spectrum
     """
-    Spectr = data.axes_manager[2].axis
+    Spectr = xaxis
     if params_ROI is not None:
         #plot the average spectrum over a region of interest (for example, (28,20,31,31) which means that
         # the starting point is xy:[28,10] and the width in x and y axes are 31)
-        avg_intens = data.data[params_ROI[1]:params_ROI[1]+params_ROI[3],params_ROI[0]:params_ROI[0]+params_ROI[2],:].mean(axis=(0,1))
+        avg_intens = data[params_ROI[1]:params_ROI[1]+params_ROI[3],params_ROI[0]:params_ROI[0]+params_ROI[2],:].mean(axis=(0,1))
     else:
-        avg_intens = data.data.mean(axis=(0,1))
+        avg_intens = data.mean(axis=(0,1))
     if xlim is not None:
         x1 = np.argmin(np.abs(Spectr - xlim[0]))
         x2 = np.argmin(np.abs(Spectr - xlim[1]))
@@ -1205,25 +1252,26 @@ def plot_spectra(spc_list, wl_list, data_type,
         plt.savefig(save_path,transparent=True,dpi=300)
     plt.show()
 #%% crop hyperspectral data by given ROI
-def crop_hsdata(original_data, ROI):
+def crop_hsdata(lumi_data, ROI):
     """
     Crop the hyperspectral data by given ROI
-    :param original_data (LumiSpectrum): the original hyperspectral data read by Hyperspy
+    :param lumi_data (LumiSpectrum): the original hyperspectral data read by Hyperspy
     :param ROI (tuple)(optional): the region of interest (ROI) in the format (x, y, width, height)
     :return: cropped_data (LumiSpectrum): the cropped hyperspectral data
     """
     x, y, width, height = ROI
-    left_in_um = original_data.axes_manager[0].axis[x]
-    top_in_um = original_data.axes_manager[1].axis[y]
-    right_in_um = original_data.axes_manager[0].axis[x + width]
-    bottom_in_um = original_data.axes_manager[1].axis[y + height]
+    left_in_um = lumi_data.axes_manager[0].axis[x]
+    top_in_um = lumi_data.axes_manager[1].axis[y]
+    right_in_um = lumi_data.axes_manager[0].axis[x + width]
+    bottom_in_um = lumi_data.axes_manager[1].axis[y + height]
     roi = hs.roi.RectangularROI(top=top_in_um, bottom=bottom_in_um, left=left_in_um, right=right_in_um)
-    cropped_hsdata = roi(original_data)
+    cropped_hsdata = roi(lumi_data)
     return cropped_hsdata
 #%% Find local maxima in the spectrum based on scipy.signal.find_peaks
 import scipy.signal as signal
 
-def find_maxima(original_data, spectrum_data, data_type,
+def find_maxima(xaxis, spectrum_data, data_type,
+                int_unit='nm',
                 major_locator=50,n_minor_locator=2, secondary_axis=False,
                 xlim=None,
                 fontsize=12,labelpad=10, labelsize=12,
@@ -1231,15 +1279,21 @@ def find_maxima(original_data, spectrum_data, data_type,
                 *args, **kwargs):
     """
     Find the maxima in the average spectrum
-    :param original_data (LumiSpectrum): the original data read by Hyperspy providing spectral information
+    :param xaxis (np.ndarray): the wavelength or wavenumber axis
     :param spectrum_data (np.ndarray): the spectrum
     :param data_type (str): the type of the data, either 'PL' or 'Raman'
-    :param prominence (int or float): the prominence of the peaks
-    :param height (int or float): the height of the peaks
+    :param int_unit (str)(optional): the unit of the intensity, default is 'nm' for PL
+    :param major_locator (int): the major locator for the x-axis
+    :param n_minor_locator (int): the number of minor locators for the x-axis
+    :param secondary_axis (bool)(optional): whether to plot the secondary axis
+    :param xlim (tuple)(optional): the limit of the x axis
+    :param fontsize (int)(optional): the font size of the labels
+    :param labelpad (int)(optional): the labelpad of the labels
+    :param labelsize (int)(optional): the labelsize of the labels
     :param save_path (str)(optional): the path to save the figure
-    :return: peaks (np.ndarray): the indices of the maxima in the spectrum
+    :return: pps (np.ndarray): the peak positions
     """
-    spectral_axis = original_data.axes_manager[2].axis
+    spectral_axis = xaxis
     if xlim is not None:
         x1 = np.argmin(np.abs(spectral_axis - xlim[0]))
         x2 = np.argmin(np.abs(spectral_axis - xlim[1]))
@@ -1253,7 +1307,7 @@ def find_maxima(original_data, spectrum_data, data_type,
     for p in range(len(pps)):
         plt.text(pps[p], pint[p]+2, np.round(pps[p]), fontsize=fontsize, rotation='vertical', va='bottom', ha='center')
     if data_type == 'PL':
-        x_label = f'{original_data.axes_manager[2].name} / {original_data.axes_manager[2].units}'
+        x_label = f'{data_type} / {int_unit}'
         if secondary_axis:
             secx = plt.gca().secondary_xaxis('top', functions=(lambda2energy, energy2lambda))
             secx.set_xlabel('Energy / eV', fontsize=fontsize, labelpad=labelpad)
