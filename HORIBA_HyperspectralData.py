@@ -28,16 +28,7 @@ def xml_paths(folder_path, endswith='.xml', IDs=None):
             if file.endswith(endswith):
                 xml_paths.append(os.path.join(root, file))
     return xml_paths
-#%% Remove the values below 0 from the raw data
-def remove_negative(data):
-    """
-    Modify the raw data by removing the values below 0
-    :param  data (LumiSpectrum): the original hyperspectral data
-    :return: data (LumiSpectrum): the modified hyperspectral data
-    """
-    data.data[data.data < 0] = 0
-    return data
-#%% Load the hyperspectral data in an .xml file exported(or saved) from LabSpec(HORIBA) software
+#%% Load the hyperspectral data in an .xml file exported(or saved) from LabSpec(HORIBA) software, including functions of spike removal and negative value removal
 def load_xml(file_path,remove_spikes=False,threshold='auto', remove_negatives=False,plot=False):
     '''
     Load the hyperspectral data in an .xml file
@@ -52,6 +43,15 @@ def load_xml(file_path,remove_spikes=False,threshold='auto', remove_negatives=Fa
     if remove_spikes:
         data.spikes_removal_tool(threshold=threshold,interactive=False)
     if remove_negatives:
+        # Remove the values below 0 from the raw data
+        def remove_negative(data):
+            """
+            Modify the raw data by removing the values below 0
+            :param  data (LumiSpectrum): the original hyperspectral data
+            :return: data (LumiSpectrum): the modified hyperspectral data
+            """
+            data.data[data.data < 0] = 0
+            return data
         data = remove_negative(data)
     if plot:
         # check if the filename contains PL or Raman
@@ -66,6 +66,106 @@ def load_xml(file_path,remove_spikes=False,threshold='auto', remove_negatives=Fa
             ylabel = 'Intensity / a.u.'
         visual_data(data.data, x_axis=data.axes_manager[2].axis, xlabel=xlabel, ylabel=ylabel)
     return data
+#%% Remove spikes from 3d dataset with numba for speed up by parallelization
+from scipy.signal import find_peaks, peak_widths
+from scipy import interpolate
+from numba import njit
+
+# --- Small helper to build safe windows (kept outside numba) ---
+def _safe_window(i, n, w):
+    lo = max(0, i - w)
+    hi = min(n - 1, i + w)
+    return np.arange(lo, hi + 1)
+
+def spike_removal_1d(y,
+                       width_threshold,
+                       prominence_threshold=None,
+                       moving_average_window=10,
+                       width_param_rel=0.8,
+                       interp_type='linear'):
+    N = len(y)
+
+    peaks, _ = find_peaks(y, prominence=prominence_threshold)
+    widths = peak_widths(y, peaks)[0]
+    ext_a = peak_widths(y, peaks, rel_height=width_param_rel)[2]
+    ext_b = peak_widths(y, peaks, rel_height=width_param_rel)[3]
+
+    spikes = np.zeros(N, dtype=np.uint8)
+
+    # Mark spike regions
+    for w, a0, b0 in zip(widths, ext_a, ext_b):
+        if w < width_threshold:
+            a = max(int(a0) - 1, 0)
+            b = min(int(b0) + 1, N - 1)
+            spikes[a:b + 1] = 1
+
+    y_out = y.copy()
+
+    for i in range(N):
+        if spikes[i] == 1:
+
+            # Build window safely
+            lo = max(0, i - moving_average_window)
+            hi = min(N - 1, i + moving_average_window)
+            window = np.arange(lo, hi + 1)
+
+            # Keep only non-spike indices
+            ok = window[spikes[window] == 0]
+
+            # If no valid neighbors, skip
+            if len(ok) < 2:
+                continue
+
+            # Build interpolator
+            interpolator = interpolate.interp1d(ok, y[ok],
+                                                kind=interp_type,
+                                                fill_value="extrapolate")
+
+            # SAFETY FIX: clamp evaluation point to domain
+            xmin = ok.min()
+            xmax = ok.max()
+            x_eval = np.clip(i, xmin, xmax)
+
+            y_out[i] = float(interpolator(x_eval))
+
+    return y_out
+
+from joblib import Parallel, delayed
+
+def spike_removal_3d(cube,
+                      width_threshold,
+                      prominence_threshold=None,
+                      moving_average_window=10,
+                      width_param_rel=0.8,
+                      interp_type='linear',
+                      n_jobs=-1):
+    X, Y, Z = cube.shape
+    cube_out = np.zeros_like(cube)
+
+    def process_spectrum(ix, iy):
+        return spike_removal_1d(
+            cube[ix, iy, :],
+            width_threshold=width_threshold,
+            prominence_threshold=prominence_threshold,
+            moving_average_window=moving_average_window,
+            width_param_rel=width_param_rel,
+            interp_type=interp_type
+        )
+
+    results = Parallel(n_jobs=n_jobs)(
+        delayed(process_spectrum)(ix, iy)
+        for ix in range(X)
+        for iy in range(Y)
+    )
+
+    # Reassemble output cube
+    idx = 0
+    for ix in range(X):
+        for iy in range(Y):
+            cube_out[ix, iy] = results[idx]
+            idx += 1
+
+    return cube_out
 #%% visualize the hyperspectral data
 def visual_data(data,
                 x_axis,
