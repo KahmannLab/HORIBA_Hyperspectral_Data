@@ -10,12 +10,17 @@ def h5_paths(folder, endswith='.h5', keywords=None):
     :return: List of file paths that match the criteria
     """
     import os
-
     matched_files = []
     for root, dirs, files in os.walk(folder):
         for file in files:
-            if file.endswith(endswith) and all(keyword in file for keyword in keywords):
-                matched_files.append(os.path.join(root, file))
+            # Check extension
+            if not file.endswith(endswith):
+                continue
+            # If keywords provided, ensure they all appear in the filename
+            if keywords:
+                if not all(keyword in file for keyword in keywords):
+                    continue
+            matched_files.append(os.path.join(root, file))
     return matched_files
 #%% save the input h5 dataset(s) to an HDF5 files (pytables)
 def save2H5(h5_paths, group_names,filename,filetitle='Combined h5 file', savepath=None):
