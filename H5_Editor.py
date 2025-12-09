@@ -1,5 +1,5 @@
 import tables
-
+import os
 #%% extract file paths from a folder
 def h5_paths(folder, endswith='.h5', keywords=None):
     """
@@ -9,7 +9,6 @@ def h5_paths(folder, endswith='.h5', keywords=None):
     :param keywords: List of keywords that must be present in the filename (default: None)
     :return: List of file paths that match the criteria
     """
-    import os
     matched_files = []
     for root, dirs, files in os.walk(folder):
         for file in files:
@@ -88,9 +87,12 @@ def data_extract(h5_path, data_loc='/Datas/Data1', metadata_loc=None,
         metadata_node = data_node
 
     wavelength_axis = metadata_node.attrs[wl_attr]
-    print(f"Wavelength axis unit: {metadata_node.attrs[wl_attr+' Unit'].decode('utf-8')}")
+    wavelength_unit = metadata_node.attrs[wl_attr+' Unit'].decode('latin-1')
+    wavelength_info = {'Wavelength':wavelength_axis, 'Unit':wavelength_unit}
+    #(f"Wavelength axis unit: {metadata_node.attrs[wl_attr+' Unit'].decode('latin-1')}")
     x_axis = metadata_node.attrs[x_axis_attr]
-    print(f"Pixel size in x axis unit: {metadata_node.attrs[x_axis_attr+' Unit'].decode('latin-1')}")
+    x_axis_unit = metadata_node.attrs[x_axis_attr+' Unit'].decode('latin-1')
+    #print(f"Pixel size in x axis unit: {metadata_node.attrs[x_axis_attr+' Unit'].decode('latin-1')}")
 
     # check if position axis is uniformly spaced
     def is_equally_spaced_np(arr, tol=0):
@@ -99,19 +101,88 @@ def data_extract(h5_path, data_loc='/Datas/Data1', metadata_loc=None,
         return np.all(np.abs(diffs - diffs[0]) == tol)
     if is_equally_spaced_np(x_axis):
         x_px_size = x_axis[1] - x_axis[0]
+        x_axis_info = {'Pixel size': x_px_size,'Unit': x_axis_unit}
     else:
-        x_px_size = x_axis
         print("Warning: The x axis is not equally spaced. The full x axis array is returned.")
+        x_axis_info = {'X axis': x_axis, 'Unit': x_axis_unit}
     if y_scale:
         y_axis = metadata_node.attrs[y_axis_attr]
-        print(f"Pixel size in y axis unit: {metadata_node.attrs[y_axis_attr + ' Unit'].decode('latin-1')}")
+        #print(f"Pixel size in y axis unit: {metadata_node.attrs[y_axis_attr + ' Unit'].decode('latin-1')}")
+        y_axis_unit = metadata_node.attrs[y_axis_attr + ' Unit'].decode('latin-1')
         if is_equally_spaced_np(y_axis):
             y_px_size = y_axis[1] - y_axis[0]
+            y_axis_info = {'Pixel size': y_px_size,'Unit': y_axis_unit}
         else:
-            y_px_size = y_axis
             print("Warning: The y axis is not equally spaced. The full y axis array is returned.")
+            y_axis_info = {'Y axis': y_axis, 'Unit': y_axis_unit}
         h5_file.close()
-        return data, wavelength_axis, x_px_size, y_px_size
+        return data, wavelength_info, x_axis_info, y_axis_info
     else:
         h5_file.close()
-        return data, wavelength_axis, x_px_size
+        return data, wavelength_info, x_axis_info
+
+#%% Save groups (as dictionary) to a h5 file
+def save_groups_h5(h5_path, groups):
+    """
+    Save multiple groups and datasets into an HDF5 file using PyTables.
+    If the file exists, it is opened in append mode; otherwise, a new file is created.
+
+    Parameters
+    ----------
+    filepath : str
+        Path to the HDF5 file.
+    groups : dict
+        Dictionary in the form:
+        {
+            "group_name1": {"dataset_name": array-like, ...},
+            "group_name2": {...},
+            ...
+        }
+    """
+    # Determine file mode
+    file_mode = 'a' if os.path.exists(h5_path) else 'w'
+
+    with tables.open_file(h5_path, mode=file_mode) as h5:
+
+        for group_name, datasets in groups.items():
+
+            # Create group if it does not exist
+            group_path = f"/{group_name}"
+            if not hasattr(h5.root, group_name):
+                group = h5.create_group("/", group_name, f"Group: {group_name}")
+            else:
+                group = h5.get_node(group_path)
+
+            # Create datasets inside the group
+            for ds_name, data in datasets.items():
+
+                # If dataset already exists, remove it before rewriting
+                if hasattr(group, ds_name):
+                    h5.remove_node(group, ds_name)
+
+                h5.create_array(group, ds_name, data)
+    print(h5)
+    h5.close()
+#%% add attributes (as dictionary) to the h5 file
+def attributes2add(h5_path, node_path, attributes):
+    """
+    Add attributes to any node (file, group, or dataset) inside an HDF5 file.
+
+    Parameters
+    ----------
+    filepath : str
+        Path to the HDF5 file.
+    node_path : str
+        HDF5 node path, e.g.:
+        "/"                 → root
+        "/group1"           → a group
+        "/group1/datasetA"  → a dataset/array/table
+    attributes : dict
+        Dictionary of attribute_name : attribute_value
+    """
+    with tables.open_file(h5_path, mode='a') as h5:
+        node = h5.get_node(node_path)
+
+        for attr_name, attr_value in attributes.items():
+            setattr(node._v_attrs, attr_name, attr_value)
+    h5.close()
