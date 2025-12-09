@@ -158,6 +158,7 @@ def img_registration(fixed_img, moving_img,fixed_mask=None,moving_mask=None,type
 
 #%% register the dataset
 def transform2dataset(fixed_data, moving_data, transform,
+                      transform_type = 'fwdtransforms',
                       interpolator='nearestNeighbor',
                       crop_to_overlap_flag=False, bbox=None, overlap_threshold=0,
                       **kwargs):
@@ -177,7 +178,7 @@ def transform2dataset(fixed_data, moving_data, transform,
     for i in range(moving_data.shape[2]):
         fixed = ants.from_numpy(fixed_data[:,:,i])
         moving = ants.from_numpy(moving_data[:,:,i])
-        warped_data[:,:,i] = ants.apply_transforms(fixed=fixed, moving=moving, transformlist=transform['fwdtransforms'],
+        warped_data[:,:,i] = ants.apply_transforms(fixed=fixed, moving=moving, transformlist=transform[transform_type],
                                                    interpolator=interpolator, **kwargs).numpy()
     # Crop if requested
     if crop_to_overlap_flag:
