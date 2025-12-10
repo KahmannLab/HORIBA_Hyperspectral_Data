@@ -22,27 +22,31 @@ def h5_paths(folder, endswith='.h5', keywords=None):
             matched_files.append(os.path.join(root, file))
     return matched_files
 #%% save the input h5 dataset(s) to an HDF5 files (pytables)
-def save2H5(h5_paths, group_names,filename,filetitle='Combined h5 file', savepath=None):
-    """
-    Function to save a list of HDF5 files to a new HDF5 file
-    :param h5_paths: List of HDF5 file paths
-    :param group_names: List of new group names to save from each HDF5 file
-    :param filename: Name of the new HDF5 file
-    :param filetitle: Title of the new HDF5 file (default: 'Combined h5 file')
-    :param savepath: Path to save the new HDF5 file (default: None)
-    """
+def normalize_path(path: str):
+    return os.path.abspath(os.path.normpath(path))
+
+def save2H5(h5_paths, group_names, filename, filetitle='Combined h5 file', savepath=None):
+
     if savepath is None:
         savepath = ''
         print("Warning: No save path provided, saving to current directory.")
-    with tables.open_file(savepath + filename+'.h5', mode="w", title=filetitle) as new_file:
+
+    out_path = normalize_path(os.path.join(savepath, filename + '.h5'))
+
+    with tables.open_file(out_path, mode="w", title=filetitle) as new_file:
+
         for i in range(len(h5_paths)):
-            with tables.open_file(h5_paths[i], mode='r') as existing_file:
+            src_path = normalize_path(h5_paths[i])
+
+            with tables.open_file(src_path, mode='r') as existing_file:
                 group_to_copy = existing_file.get_node('/Datas')
-                new_file.copy_node(group_to_copy, new_file.root, newname=group_names[i], recursive=True)
-                print('The structue of the file:\n', new_file)
-                existing_file.close()
-    new_file.close()
-    print("Data saved to", savepath + filename,' successfully and the file was closed.')
+                new_file.copy_node(group_to_copy, new_file.root,
+                                   newname=group_names[i], recursive=True)
+
+            # DO NOT call existing_file.close()
+            # DO NOT call new_file.close()
+
+    print("Data saved to:", out_path)
 #%% rename groups in an HDF5 file
 def node2rename(h5_path, old_name, new_name, loc_node=None):
     """
@@ -60,11 +64,41 @@ def node2rename(h5_path, old_name, new_name, loc_node=None):
         else:
             h5_file.rename_node('/'+old_name, new_name) # rename a group under root
             print('The groups in the file:\n', h5_file.get_node('/'))
-    h5_file.close()
     print('The file was closed.')
+
+def attribute2rename(h5_path, node_path, old_name, new_name):
+    """
+    Rename an attribute on any HDF5 node using PyTables.
+
+    Parameters
+    ----------
+    h5_path : str
+        Path to the HDF5 file.
+    node_path : str
+        Path to the node (e.g. '/', '/group1', '/group1/datasetA').
+    old_name : str
+        Existing attribute name.
+    new_name : str
+        New attribute name.
+    """
+
+    with tables.open_file(h5_path, mode='a') as h5:  # must be writable
+        node = h5.get_node(node_path)
+        attrs = node._v_attrs
+
+        # Check if the old attribute exists
+        if old_name not in attrs._v_attrnames:
+            raise KeyError(f"Attribute '{old_name}' does not exist on node '{node_path}'")
+
+        # If new name already exists, refuse to overwrite
+        if new_name in attrs._v_attrnames:
+            raise KeyError(f"Attribute '{new_name}' already exists on node '{node_path}'")
+
+        # Copy value
+        attrs._f_rename(old_name, new_name)
 #%% extract data, wavelength and axes info from an H5 file of hyperspectral data
 def data_extract(h5_path, data_loc='/Datas/Data1', metadata_loc=None,
-                 wl_attr='Axis1',x_axis_attr='Axis2', y_scale = False, y_axis_attr='Axis3'):
+                 wl_attr='Axis1',x_axis_attr='Axis2',decode=True, y_scale = False, y_axis_attr='Axis3'):
     """
     Function to extract data, signal axis and pixel size from an HDF5 (h5) file
     :param h5_path: Path to the HDF5 file
@@ -87,11 +121,17 @@ def data_extract(h5_path, data_loc='/Datas/Data1', metadata_loc=None,
         metadata_node = data_node
 
     wavelength_axis = metadata_node.attrs[wl_attr]
-    wavelength_unit = metadata_node.attrs[wl_attr+' Unit'].decode('latin-1')
+    if decode:
+        wavelength_unit = metadata_node.attrs[wl_attr+' Unit'].decode('latin-1')
+    else:
+        wavelength_unit = metadata_node.attrs[wl_attr+' Unit']
     wavelength_info = {'Wavelength':wavelength_axis, 'Unit':wavelength_unit}
     #(f"Wavelength axis unit: {metadata_node.attrs[wl_attr+' Unit'].decode('latin-1')}")
     x_axis = metadata_node.attrs[x_axis_attr]
-    x_axis_unit = metadata_node.attrs[x_axis_attr+' Unit'].decode('latin-1')
+    if decode:
+        x_axis_unit = metadata_node.attrs[x_axis_attr+' Unit'].decode('latin-1')
+    else:
+        x_axis_unit = metadata_node.attrs[x_axis_attr+' Unit']
     #print(f"Pixel size in x axis unit: {metadata_node.attrs[x_axis_attr+' Unit'].decode('latin-1')}")
 
     # check if position axis is uniformly spaced
@@ -108,7 +148,10 @@ def data_extract(h5_path, data_loc='/Datas/Data1', metadata_loc=None,
     if y_scale:
         y_axis = metadata_node.attrs[y_axis_attr]
         #print(f"Pixel size in y axis unit: {metadata_node.attrs[y_axis_attr + ' Unit'].decode('latin-1')}")
-        y_axis_unit = metadata_node.attrs[y_axis_attr + ' Unit'].decode('latin-1')
+        if decode:
+            y_axis_unit = metadata_node.attrs[y_axis_attr + ' Unit'].decode('latin-1')
+        else:
+            y_axis_unit = metadata_node.attrs[y_axis_attr + ' Unit']
         if is_equally_spaced_np(y_axis):
             y_px_size = y_axis[1] - y_axis[0]
             y_axis_info = {'Pixel size': y_px_size,'Unit': y_axis_unit}
@@ -121,6 +164,24 @@ def data_extract(h5_path, data_loc='/Datas/Data1', metadata_loc=None,
         h5_file.close()
         return data, wavelength_info, x_axis_info
 
+def data_extract_temp(h5_path, data_loc='/Confocal PL_p2/Confocal PL_p2',metadata_loc=None,
+                      wl_attr='Wavelength',pixel_axis_attr='Pixel size'):
+    h5_file = tables.open_file(h5_path, mode='r')
+    data_node = h5_file.get_node(data_loc)
+    data = data_node.read()
+    if metadata_loc:
+        metadata_node = h5_file.get_node(metadata_loc)
+    else:
+        metadata_node = data_node
+
+    wavelength_axis = metadata_node.attrs[wl_attr]
+    wavelength_unit = metadata_node.attrs[wl_attr+' Unit']
+    pixel_size = metadata_node.attrs[pixel_axis_attr]
+    pixel_unit = metadata_node.attrs[pixel_axis_attr+' Unit']
+    wavelength_info = {'Wavelength':wavelength_axis, 'Unit':wavelength_unit}
+    pixel_info = {'Pixel size': pixel_size,'Unit': pixel_unit}
+    h5_file.close()
+    return data, wavelength_info,pixel_info
 #%% Save groups (as dictionary) to a h5 file
 def save_groups_h5(h5_path, groups):
     """
@@ -139,30 +200,28 @@ def save_groups_h5(h5_path, groups):
             ...
         }
     """
-    # Determine file mode
+    h5_path = normalize_path(h5_path)
     file_mode = 'a' if os.path.exists(h5_path) else 'w'
 
     with tables.open_file(h5_path, mode=file_mode) as h5:
 
         for group_name, datasets in groups.items():
 
-            # Create group if it does not exist
-            group_path = f"/{group_name}"
+            # Create group if missing
             if not hasattr(h5.root, group_name):
-                group = h5.create_group("/", group_name, f"Group: {group_name}")
+                group = h5.create_group("/", group_name)
             else:
-                group = h5.get_node(group_path)
+                group = h5.get_node(f"/{group_name}")
 
-            # Create datasets inside the group
+            # Write datasets
             for ds_name, data in datasets.items():
 
-                # If dataset already exists, remove it before rewriting
                 if hasattr(group, ds_name):
                     h5.remove_node(group, ds_name)
 
-                h5.create_array(group, ds_name, data)
-    print(h5)
-    h5.close()
+                h5.create_array(group, ds_name, obj=data)
+
+    print("Saved:", h5_path)
 #%% add attributes (as dictionary) to the h5 file
 def attributes2add(h5_path, node_path, attributes):
     """
@@ -185,4 +244,3 @@ def attributes2add(h5_path, node_path, attributes):
 
         for attr_name, attr_value in attributes.items():
             setattr(node._v_attrs, attr_name, attr_value)
-    h5.close()
