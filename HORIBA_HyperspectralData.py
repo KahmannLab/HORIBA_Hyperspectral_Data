@@ -446,7 +446,7 @@ def intint_map(data, xaxis, data_type, px_size,
                frac_scalebar=0.133335,
                savefig=False, figname=None, savefile=False, filename=None, savepath=None,
                cbar_adj=True,
-               fontsize=12,labelpad=10,
+               fontsize=12,labelpad=10,cmap='viridis',
                **cbar_kwargs):
     """
     Plot an integrated intensity map over the given wavelength or wavenumber range
@@ -478,9 +478,9 @@ def intint_map(data, xaxis, data_type, px_size,
     fig,ax = plt.subplots()
     if cbar_adj:
         vmin, vmax = adjust_colorbar(intint,**cbar_kwargs)
-        cmap = ax.imshow(intint, vmin=vmin, vmax=vmax, cmap='viridis')
+        cmap = ax.imshow(intint, vmin=vmin, vmax=vmax, cmap=cmap)
     else:
-        cmap = ax.imshow(intint, cmap='viridis')
+        cmap = ax.imshow(intint, cmap=cmap)
     ax.set_axis_off()
     scalebar = AnchoredSizeBar(ax.transData, len_in_pix, str(length) + ' μm', 4, pad=1,
                                borderpad=0.1, sep=5, frameon=False, size_vertical=width, color='white',
@@ -638,7 +638,7 @@ def ratio_map(data, xaxis, wavelength1, wavelength2,px_size,
     return ratio
 #%% Plot colormap
 def plot_colormap(data, scale=None, frac_scalebar=0.133335,
-                  fontsize=12,labelpad=10,
+                  fontsize=12,labelpad=10,cmap='viridis',
                   cbar_adj=True,cbar_label=None, title=None, save_path=None,
                   sci_notation_cbar=False,  # whether to use scientific notation for the colorbar
                   **kwargs):
@@ -659,9 +659,9 @@ def plot_colormap(data, scale=None, frac_scalebar=0.133335,
     fig, ax = plt.subplots()
     if cbar_adj:
         vmin, vmax = adjust_colorbar(data, **kwargs)
-        cmap = ax.imshow(data, vmin=vmin, vmax=vmax)
+        cmap = ax.imshow(data, vmin=vmin, vmax=vmax,cmap=cmap)
     else:
-        cmap = ax.imshow(data)
+        cmap = ax.imshow(data,cmap=cmap)
     if scale is not None:
         len_in_pix, length, width = get_scalebar_length(data, scale, percent=frac_scalebar)
         scalebar = AnchoredSizeBar(ax.transData, len_in_pix, str(length) + ' μm', 4, pad=1,
