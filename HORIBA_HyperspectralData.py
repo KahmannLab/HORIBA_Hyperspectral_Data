@@ -638,7 +638,7 @@ def ratio_map(data, xaxis, wavelength1, wavelength2,px_size,
     return ratio
 #%% Plot colormap
 def plot_colormap(data, scale=None, frac_scalebar=0.133335,
-                  fontsize=12,labelpad=10,cmap='viridis',
+                  fontsize=12,labelpad=10,cmap='viridis',cbar=True,
                   cbar_adj=True,cbar_label=None, title=None, save_path=None,
                   sci_notation_cbar=False,  # whether to use scientific notation for the colorbar
                   **kwargs):
@@ -669,14 +669,15 @@ def plot_colormap(data, scale=None, frac_scalebar=0.133335,
                                    color='white', fontproperties={'size': 15, 'weight': 'bold'})
         ax.add_artist(scalebar)
         ax.set_axis_off()
-    fmt = matplotlib.ticker.ScalarFormatter(useMathText=True)
-    fmt.set_powerlimits((0, 0))
-    if sci_notation_cbar:
-        cbar = fig.colorbar(cmap, ax=ax, format=fmt)
-    else:
-        cbar = fig.colorbar(cmap, ax=ax)
-    if cbar_label is not None:
-        cbar.set_label(cbar_label, fontsize=fontsize, labelpad=labelpad)
+    if cbar:
+        fmt = matplotlib.ticker.ScalarFormatter(useMathText=True)
+        fmt.set_powerlimits((0, 0))
+        if sci_notation_cbar:
+            cbar = fig.colorbar(cmap, ax=ax, format=fmt)
+        else:
+            cbar = fig.colorbar(cmap, ax=ax)
+        if cbar_label:
+            cbar.set_label(cbar_label, fontsize=fontsize, labelpad=labelpad)
     if title is not None:
         ax.set_title(title)
     plt.tight_layout()
