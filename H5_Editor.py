@@ -57,6 +57,7 @@ def node2rename(h5_path, old_name, new_name, loc_node=None):
     :param loc_node: Location of the node (default: None, if the node is in the root, i.e., a group;
     otherwise, the name of the group, e.g. '/Group'or'/Group/Subgroup')
     """
+    h5_path = normalize_path(h5_path)
     with tables.open_file(h5_path, mode='a') as h5_file:
         if loc_node:
             h5_file.rename_node(loc_node+'/'+old_name, new_name) # rename a subgroup
@@ -81,7 +82,7 @@ def attribute2rename(h5_path, node_path, old_name, new_name):
     new_name : str
         New attribute name.
     """
-
+    h5_path = normalize_path(h5_path)
     with tables.open_file(h5_path, mode='a') as h5:  # must be writable
         node = h5.get_node(node_path)
         attrs = node._v_attrs
@@ -111,7 +112,7 @@ def data_extract(h5_path, data_loc='/Datas/Data1', metadata_loc=None,
     :return: data, wavelength_axis, x_px_size, y_px_size (if y_scale is True)
     """
     import numpy as np
-
+    h5_path = normalize_path(h5_path)
     h5_file = tables.open_file(h5_path, mode='r')
     data_node = h5_file.get_node(data_loc)
     data = data_node.read()
@@ -166,6 +167,7 @@ def data_extract(h5_path, data_loc='/Datas/Data1', metadata_loc=None,
 
 def data_extract_temp(h5_path, data_loc='/Confocal PL_p2/Confocal PL_p2',metadata_loc=None,
                       wl_attr='Wavelength',pixel_axis_attr='Pixel size'):
+    h5_path = normalize_path(h5_path)
     h5_file = tables.open_file(h5_path, mode='r')
     data_node = h5_file.get_node(data_loc)
     data = data_node.read()
@@ -239,8 +241,66 @@ def attributes2add(h5_path, node_path, attributes):
     attributes : dict
         Dictionary of attribute_name : attribute_value
     """
+    h5_path = normalize_path(h5_path)
     with tables.open_file(h5_path, mode='a') as h5:
         node = h5.get_node(node_path)
 
         for attr_name, attr_value in attributes.items():
             setattr(node._v_attrs, attr_name, attr_value)
+
+#%% add a new array to an existing group in the h5 file
+def array2add(h5_path, group_path, array_name, data, *, overwrite=False):
+    """
+    Add a new array to an existing group in an HDF5 file using PyTables.
+
+    Parameters
+    ----------
+    h5_path : str
+        Path to the HDF5 file.
+    group_path : str
+        Path to the target group (e.g. '/group1/subgroup').
+    array_name : str
+        Name of the array to create.
+    data : array-like
+        Data to store.
+    overwrite : bool, optional
+        If True, overwrite an existing array with the same name.
+        Default is False.
+
+    Raises
+    ------
+    FileNotFoundError
+        If the HDF5 file does not exist.
+    KeyError
+        If the group does not exist.
+    RuntimeError
+        If the array already exists and overwrite=False.
+    """
+
+    # --- Normalize path (VERY important on Windows) ---
+    h5_path = normalize_path(h5_path)
+
+    if not os.path.exists(h5_path):
+        raise FileNotFoundError(f"HDF5 file not found: {h5_path}")
+
+    with tables.open_file(h5_path, mode="a") as h5:
+
+        # --- Get target group ---
+        if not h5.__contains__(group_path):
+            raise KeyError(f"Group does not exist: {group_path}")
+
+        group = h5.get_node(group_path)
+
+        # --- Check if array already exists ---
+        if hasattr(group, array_name):
+            if not overwrite:
+                raise RuntimeError(
+                    f"Array '{array_name}' already exists in '{group_path}'. "
+                    "Use overwrite=True to replace it."
+                )
+            h5.remove_node(group, array_name)
+
+        # --- Create array ---
+        h5.create_array(group, array_name, obj=data)
+
+    # File is GUARANTEED closed here
