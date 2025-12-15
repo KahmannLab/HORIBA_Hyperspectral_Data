@@ -219,16 +219,22 @@ def transform2map(fixed_map, moving_map, transform,
 
 #%% Upsample the image to fit the similar pixel size
 import cv2
-def upsample_img(img, pixel_size, reference_pixel_size,plot=True):
+def resample_img(img, pixel_size, reference_pixel_size,plot=True):
     '''
     :param img (ndarray):
     :param pixel_size (float): pixel size of the input image, should be in the same unit as reference_pixel_size
-    :param reference_pixel_size (float): pixel size after upsampling, should be in the same unit as pixel_size
+    :param reference_pixel_size (float): pixel size after resampling, should be in the same unit as pixel_size
     :param plot:
-    :return: upsampled (ndarray): the upsampled image
+    :return: resampled (ndarray): the resampled image
     '''
     # Compute scale factor (how much bigger the pixels should be)
     scale = pixel_size / reference_pixel_size
+    if scale < 1: # Downsample
+        interp = cv2.INTER_AREA
+        title = "Downsampled image"
+    elif scale > 1: # Upsample
+        interp = cv2.INTER_LINEAR
+        title = "Upsampled image"
 
     # New image size (width, height)
     new_size = (
@@ -236,8 +242,8 @@ def upsample_img(img, pixel_size, reference_pixel_size,plot=True):
         int(round(img.shape[0] * scale))  # height
     )
 
-    # Upsample using bilinear interpolation
-    upsampled = cv2.resize(img, new_size, interpolation=cv2.INTER_LINEAR)
+    # Upsample or downsample the image using interpolation
+    resampled = cv2.resize(img, new_size, interpolation=interp)
 
     if plot:
         fig, axs = plt.subplots(1, 2, figsize=(10, 5))
@@ -250,14 +256,14 @@ def upsample_img(img, pixel_size, reference_pixel_size,plot=True):
 
         # Upsampled image
         ax = axs[1]
-        ax.imshow(upsampled)
-        ax.set_title(f"Upsampled Image")
+        ax.imshow(resampled)
+        ax.set_title(title)
         ax.axis("off")
 
         plt.tight_layout()
         plt.show()
 
-    return upsampled
+    return resampled
 
 #%% Mask the region out of ROI
 def create_mask_ROI(img, ROI):
@@ -271,15 +277,15 @@ def create_mask_ROI(img, ROI):
 def transforminmat2img(transform_path, moving_img, fixed_img=None,plot=True):
     transform = ants.read_transform(transform_path)
     moving_img = ants.from_numpy(moving_img)
-    if fixed_img:
+    if fixed_img is not None:
         fixed_img = ants.from_numpy(fixed_img)
     transformed_img = transform.apply_to_image(moving_img,reference=fixed_img)
     if plot:
-        if fixed_img:
-            plt.imshow(fixed_img, cmap='gray')
-            plt.imshow(transformed_img,alpha=0.5)
+        if fixed_img is not None:
+            plt.imshow(fixed_img.numpy(), cmap='gray')
+            plt.imshow(transformed_img.numpy(),alpha=0.5)
         else:
-            plt.imshow(transformed_img)
+            plt.imshow(transformed_img.numpy())
         plt.tight_layout()
         plt.show()
     return transformed_img.numpy()
