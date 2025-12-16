@@ -68,102 +68,120 @@ def load_xml(file_path,remove_spikes=False,threshold='auto', remove_negatives=Fa
     return data
 #%% Remove spikes from 3d dataset with numba for speed up by parallelization
 from scipy.signal import find_peaks, peak_widths
-from scipy import interpolate
-from numba import njit
+from scipy.interpolate import interp1d
 
-# --- Small helper to build safe windows (kept outside numba) ---
-def _safe_window(i, n, w):
-    lo = max(0, i - w)
-    hi = min(n - 1, i + w)
-    return np.arange(lo, hi + 1)
+def spike_removal_1d(
+    y,
+    width_threshold,
+    prominence_threshold=None,
+    window=10,
+    rel_height=0.8,
+    interp_type="linear",
+):
+    """
+    Remove narrow spikes from a 1D signal by peak detection and interpolation.
 
-def spike_removal_1d(y,
-                       width_threshold,
-                       prominence_threshold=None,
-                       moving_average_window=10,
-                       width_param_rel=0.8,
-                       interp_type='linear'):
-    N = len(y)
+    Parameters
+    ----------
+    y : array_like
+        Input 1D signal
+    width_threshold : float
+        Maximum peak width considered a spike
+    prominence_threshold : float or None
+        Prominence threshold for peak detection
+    window : int
+        Half-width of local interpolation window
+    rel_height : float
+        Relative height used to estimate peak extent
+    interp_type : str
+        Interpolation type passed to scipy.interpolate.interp1d
 
-    peaks, _ = find_peaks(y, prominence=prominence_threshold)
-    widths = peak_widths(y, peaks)[0]
-    ext_a = peak_widths(y, peaks, rel_height=width_param_rel)[2]
-    ext_b = peak_widths(y, peaks, rel_height=width_param_rel)[3]
-
-    spikes = np.zeros(N, dtype=np.uint8)
-
-    # Mark spike regions
-    for w, a0, b0 in zip(widths, ext_a, ext_b):
-        if w < width_threshold:
-            a = max(int(a0) - 1, 0)
-            b = min(int(b0) + 1, N - 1)
-            spikes[a:b + 1] = 1
-
+    Returns
+    -------
+    y_out : ndarray
+        Despiked signal
+    """
+    y = np.asarray(y)
+    N = y.size
     y_out = y.copy()
 
-    for i in range(N):
-        if spikes[i] == 1:
+    # --- Detect peaks ---
+    peaks, _ = find_peaks(y, prominence=prominence_threshold)
+    if len(peaks) == 0:
+        return y_out
 
-            # Build window safely
-            lo = max(0, i - moving_average_window)
-            hi = min(N - 1, i + moving_average_window)
-            window = np.arange(lo, hi + 1)
+    widths, _, left_ips, right_ips = peak_widths(y, peaks, rel_height=rel_height)
 
-            # Keep only non-spike indices
-            ok = window[spikes[window] == 0]
+    # --- Mark spike regions ---
+    spikes = np.zeros(N, dtype=bool)
 
-            # If no valid neighbors, skip
-            if len(ok) < 2:
-                continue
+    for w, a, b in zip(widths, left_ips, right_ips):
+        if w < width_threshold:
+            lo = max(int(a) - 1, 0)
+            hi = min(int(b) + 1, N - 1)
+            spikes[lo : hi + 1] = True
 
-            # Build interpolator
-            interpolator = interpolate.interp1d(ok, y[ok],
-                                                kind=interp_type,
-                                                fill_value="extrapolate")
+    # --- Interpolate over spikes ---
+    for i in np.where(spikes)[0]:
+        lo = max(0, i - window)
+        hi = min(N, i + window + 1)
 
-            # SAFETY FIX: clamp evaluation point to domain
-            xmin = ok.min()
-            xmax = ok.max()
-            x_eval = np.clip(i, xmin, xmax)
+        neighbors = np.arange(lo, hi)
+        neighbors = neighbors[~spikes[neighbors]]
 
-            y_out[i] = float(interpolator(x_eval))
+        if neighbors.size < 2:
+            continue
+
+        interp = interp1d(
+            neighbors,
+            y[neighbors],
+            kind=interp_type,
+            bounds_error=False,
+            fill_value="extrapolate",
+        )
+
+        y_out[i] = interp(np.clip(i, neighbors.min(), neighbors.max()))
 
     return y_out
 
 from joblib import Parallel, delayed
 
-def spike_removal_3d(cube,
-                      width_threshold,
-                      prominence_threshold=None,
-                      moving_average_window=10,
-                      width_param_rel=0.8,
-                      interp_type='linear',
-                      n_jobs=-1):
-    X, Y, Z = cube.shape
-    cube_out = np.zeros_like(cube)
+def spike_removal_3d(
+    cube,
+    width_threshold,
+    prominence_threshold=None,
+    window=10,
+    rel_height=0.8,
+    interp_type="linear",
+    n_jobs=-1,
+):
+    """
+    Apply 1D spike removal along the last axis of a 3D cube.
+    """
+    X, Y, _ = cube.shape
+    cube_out = np.empty_like(cube)
 
-    def process_spectrum(ix, iy):
+    def process(ix, iy):
         return spike_removal_1d(
-            cube[ix, iy, :],
-            width_threshold=width_threshold,
-            prominence_threshold=prominence_threshold,
-            moving_average_window=moving_average_window,
-            width_param_rel=width_param_rel,
-            interp_type=interp_type
+            cube[ix, iy],
+            width_threshold,
+            prominence_threshold,
+            window,
+            rel_height,
+            interp_type,
         )
 
     results = Parallel(n_jobs=n_jobs)(
-        delayed(process_spectrum)(ix, iy)
+        delayed(process)(ix, iy)
         for ix in range(X)
         for iy in range(Y)
     )
 
-    # Reassemble output cube
-    idx = 0
+    k = 0
     for ix in range(X):
         for iy in range(Y):
-            cube_out[ix, iy] = results[idx]
-            idx += 1
+            cube_out[ix, iy] = results[k]
+            k += 1
 
     return cube_out
 #%% visualize the hyperspectral data
