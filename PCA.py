@@ -5,7 +5,6 @@ from matplotlib_scalebar.scalebar import ScaleBar
 import matplotlib.ticker
 from matplotlib.ticker import MultipleLocator, AutoMinorLocator
 from mpl_toolkits.axes_grid1.anchored_artists import AnchoredSizeBar
-
 #%% New: PCA from sklearn for hypserpy data
 # convert hyperspectral data to a 2D array where each row is a spectrum
 def stack_spectra_columnwise(cube):
@@ -149,6 +148,86 @@ def plot_PCs(component_spectra, x_axis, component_idx,
                 print("Warning: No save path provided, saving in the current directory.")
 
         plt.show()
+#%%
+import math
+
+def plot_PCs_combined(component_spectra, x_axis, component_idx,
+                      x_label='Raman shift / cm$^{-1}$',
+                      y_label='Intensity / a.u.',
+                      fontsize=12, labelsize=12,
+                      savefig=False, figname=None, savepath=None):
+    """
+    Plot several PCA component spectra in one figure with shared axes.
+
+    Parameters:
+        component_spectra : array-like, shape (n_components, n_features)
+        x_axis : array-like, shape (n_features,)
+        component_idx : int or list of int
+            If int -> first n PCs (1..n)
+            If list -> specific PCs (1-based indices)
+        x_label, y_label : str
+            Common axis labels
+        fontsize, labelpad, labelsize : int
+        savefig : bool
+        figname : str
+        savepath : str or None
+
+    Returns:
+        None
+    """
+
+    # --- handle indices ---
+    if isinstance(component_idx, int):
+        indices = list(range(component_idx))
+    elif isinstance(component_idx, list):
+        indices = [idx - 1 for idx in component_idx]
+    else:
+        raise ValueError("component_idx must be an int or a list of ints.")
+
+    n = len(indices)
+
+    # --- automatic grid layout (≈ square) ---
+    ncols = math.ceil(math.sqrt(n))
+    nrows = math.ceil(n / ncols)
+
+    fig, axes = plt.subplots(nrows, ncols, sharex=False, sharey=False,
+                             figsize=(4*ncols, 3*nrows))
+
+    # Flatten axes for easier iteration
+    axes = np.array(axes).reshape(-1)
+
+    for ax, idx in zip(axes, indices):
+        ax.plot(x_axis, component_spectra[idx], label=f'PC {idx+1}')
+        ax.legend(fontsize=labelsize-1)
+        ax.tick_params(which='both', direction='in',
+                       right=True, top=True, labelsize=labelsize)
+
+        # Remove individual axes labels
+        ax.set_xlabel('')
+        ax.set_ylabel('')
+
+    # Turn off any unused axes (if grid not perfectly filled)
+    for ax in axes[n:]:
+        ax.axis('off')
+
+    # Shared labels
+    fig.supxlabel(x_label, fontsize=fontsize, y=0.01)
+    fig.supylabel(y_label, fontsize=fontsize, x=0.01)
+
+    plt.tight_layout()
+
+    # --- saving ---
+    if savefig:
+        savename = figname if figname is not None else "PCs_combined"
+        if savepath is not None:
+            plt.savefig(savepath + savename + '.png',
+                        transparent=True, dpi=300)
+        else:
+            plt.savefig(savename + '.png', transparent=True, dpi=300)
+            print("Warning: No save path provided, saving in the current directory.")
+
+    plt.show()
+
 #%% reconstruct the data
 def reconstruct_data(data, pca, component_idx=None, component_list=None):
     """
@@ -166,7 +245,7 @@ def reconstruct_data(data, pca, component_idx=None, component_list=None):
               datacube_reconstructed : np.ndarray
        """
     flat_data = stack_spectra_columnwise(data)
-    data_pca = pca.transform(flat_data)
+    data_pca = pca.fit_transform(flat_data)
     if component_idx is not None:
         # Select first n_first components
         selected_indices = list(range(component_idx))
@@ -183,6 +262,11 @@ def reconstruct_data(data, pca, component_idx=None, component_list=None):
     # Reconstruct data
     data_reconstructed = np.dot(data_pca_sel, components_sel) + pca.mean_
     datacube_reconstructed = unstack_spectra_columnwise(data_reconstructed, data.shape[0], data.shape[1])
+
+    # calculate the variance
+    r = data - datacube_reconstructed
+    var = np.var(r)
+    print(f"Variance: {var}")
 
     return datacube_reconstructed
 
