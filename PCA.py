@@ -267,6 +267,17 @@ def reconstruct_data(data, pca, component_idx=None, component_list=None):
     r = data - datacube_reconstructed
     var = np.var(r)
     print(f"Variance: {var}")
+    # calculated total explained variance ratio
+    EVR = pca.explained_variance_ratio_
+    EVR_tot = np.sum(EVR[selected_indices])
+    print(f"Total explained variance: {EVR_tot}")
+    # calculate the MSE (reference data is given by the average spectrum)
+    # mean over x and y, keep spectral dimension
+    avg_spectrum = np.mean(data, axis=(0, 1))  # shape (n_features,)
+    reference_cube = np.tile(avg_spectrum, (data.shape[0], data.shape[1], 1))
+    # --- MSE vs reference ---
+    mse = np.mean((datacube_reconstructed - reference_cube) ** 2)
+    print(f"MSE vs spatially averaged reference: {mse}")
 
     return datacube_reconstructed
 
