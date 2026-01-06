@@ -184,6 +184,90 @@ def spike_removal_3d(
             k += 1
 
     return cube_out
+#%% Adaptive median filter for despiking and denoising
+def adaptive_median_filter_1d(
+    y,
+    window=7,
+    spike_threshold=3.5,
+    smooth_weight=0.5,
+):
+    """
+    Adaptive median filter that handles both impulse noise (spikes)
+    and Gaussian noise in 1D spectra.
+
+    Parameters
+    ----------
+    y : array_like
+        Input 1D signal (spectrum)
+    window : int
+        Odd window size
+    spike_threshold : float
+        Threshold (in MAD units) to classify a point as a spike
+    smooth_weight : float
+        Weight between median and mean for non-spike points (0–1)
+
+    Returns
+    -------
+    y_out : ndarray
+        Filtered signal
+    """
+    y = np.asarray(y, dtype=float)
+    N = y.size
+    half = window // 2
+    y_out = y.copy()
+
+    for i in range(N):
+        lo = max(0, i - half)
+        hi = min(N, i + half + 1)
+        local = y[lo:hi]
+
+        median = np.median(local)
+        mad = np.median(np.abs(local - median)) + 1e-12
+        mean = local.mean()
+
+        # Spike detection using robust z-score
+        z = np.abs(y[i] - median) / mad
+
+        if z > spike_threshold:
+            # Impulse noise → median replacement
+            y_out[i] = median
+        else:
+            # Gaussian noise → mild smoothing
+            y_out[i] = (
+                smooth_weight * median
+                + (1 - smooth_weight) * mean
+            )
+
+    return y_out
+
+
+def adaptive_median_filter_3d_parallel(
+    cube,
+    n_jobs=-1,
+    **kwargs,
+):
+    """
+    Parallel adaptive median filtering along spectral axis of a 3D cube.
+    """
+    X, Y, _ = cube.shape
+    cube_out = np.empty_like(cube)
+
+    def process(ix, iy):
+        return adaptive_median_filter_1d(cube[ix, iy], **kwargs)
+
+    results = Parallel(n_jobs=n_jobs)(
+        delayed(process)(ix, iy)
+        for ix in range(X)
+        for iy in range(Y)
+    )
+
+    k = 0
+    for ix in range(X):
+        for iy in range(Y):
+            cube_out[ix, iy] = results[k]
+            k += 1
+
+    return cube_out
 #%% visualize the hyperspectral data
 def visual_data(data,
                 x_axis,
