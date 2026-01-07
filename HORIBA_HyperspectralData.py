@@ -184,6 +184,180 @@ def spike_removal_3d(
             k += 1
 
     return cube_out
+#%% FFT filtering for oscillating pattern removal
+def plot_fft_spectrum(
+    y,
+    title="FFT magnitude spectrum",
+    log_scale=True,
+    xlim=None,
+):
+    """
+    Plot the FFT magnitude spectrum of a 1D signal.
+
+    Parameters
+    ----------
+    y : array_like
+        Input signal (e.g. Raman spectrum)
+    title : str
+        Plot title
+    log_scale : bool
+        Use logarithmic y-axis for better visibility
+    xlim: list
+        for zoom-in
+    """
+    y = np.asarray(y, dtype=float)
+    N = y.size
+
+    # FFT
+    Y = np.fft.fft(y)
+    mag = np.abs(Y)
+
+    # Positive frequencies only
+    freqs = np.arange(N // 2)
+    mag = mag[: N // 2]
+
+    plt.figure()
+    plt.plot(freqs, mag)
+    plt.xlabel("FFT frequency index")
+    plt.ylabel("Magnitude")
+    plt.title(title)
+    plt.xlim(xlim)
+    if log_scale:
+        plt.yscale("log")
+
+    plt.tight_layout()
+    plt.show()
+
+def fft_notch_filter_1d(
+    y,
+    notch_freqs,
+    notch_width=1):
+    """
+    Remove oscillatory components from a 1D signal using FFT notch filtering.
+
+    Parameters
+    ----------
+    y : array_like
+        Input spectrum
+    notch_freqs : list or array
+        Indices of FFT frequencies to suppress (positive frequencies)
+    notch_width : int
+        Half-width of each notch (in frequency bins)
+
+    Returns
+    -------
+    y_out : ndarray
+        Filtered spectrum
+    """
+    y = np.asarray(y, dtype=float)
+    N = y.size
+
+    # FFT
+    Y = np.fft.fft(y)
+
+    for f in notch_freqs:
+        f = int(f)
+        lo = max(f - notch_width, 0)
+        hi = min(f + notch_width + 1, N)
+
+        # Remove positive and symmetric negative frequencies
+        Y[lo:hi] = 0
+        Y[-hi:-lo] = 0
+
+    # Inverse FFT
+    y_out = np.real(np.fft.ifft(Y))
+
+    return y_out
+
+def fft_notch_filter_3d(
+    cube,
+    notch_freqs,
+    notch_width=1,
+    n_jobs=-1):
+    """
+    Apply FFT notch filtering along the spectral axis of a 3D hyperspectral cube.
+    """
+    X, Y, _ = cube.shape
+    cube_out = np.empty_like(cube, dtype=float)
+
+    def process(ix, iy):
+        return fft_notch_filter_1d(
+            cube[ix, iy],
+            notch_freqs=notch_freqs,
+            notch_width=notch_width,
+        )
+
+    results = Parallel(n_jobs=n_jobs)(
+        delayed(process)(ix, iy)
+        for ix in range(X)
+        for iy in range(Y)
+    )
+
+    k = 0
+    for ix in range(X):
+        for iy in range(Y):
+            cube_out[ix, iy] = results[k]
+            k += 1
+
+    return cube_out
+#%% Moving average smoother for Gaussian noise removal
+def moving_average_1d(y, window=7):
+    """
+    Moving average (mean) smoother for 1D spectra.
+
+    Parameters
+    ----------
+    y : array_like
+        Input spectrum
+    window : int
+        Window size (odd recommended)
+
+    Returns
+    -------
+    y_out : ndarray
+        Smoothed spectrum
+    """
+    y = np.asarray(y, dtype=float)
+
+    if window < 1:
+        raise ValueError("window must be >= 1")
+
+    if window % 2 == 0:
+        raise ValueError("window size should be odd")
+
+    kernel = np.ones(window) / window
+    y_out = np.convolve(y, kernel, mode="same")
+
+    return y_out
+def moving_average_3d_parallel(
+    cube,
+    window=7,
+    n_jobs=-1,
+):
+    """
+    Parallel moving average smoothing for hyperspectral data.
+    """
+    X, Y, _ = cube.shape
+    cube_out = np.empty_like(cube, dtype=float)
+
+    def process(ix, iy):
+        return moving_average_1d(
+            cube[ix, iy], window=window
+        )
+
+    results = Parallel(n_jobs=n_jobs)(
+        delayed(process)(ix, iy)
+        for ix in range(X)
+        for iy in range(Y)
+    )
+
+    k = 0
+    for ix in range(X):
+        for iy in range(Y):
+            cube_out[ix, iy] = results[k]
+            k += 1
+
+    return cube_out
 #%% Adaptive median filter for despiking and denoising
 def adaptive_median_filter_1d(
     y,
