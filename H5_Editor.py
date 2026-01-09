@@ -24,6 +24,11 @@ def h5_paths(folder, endswith='.h5', keywords=None):
 #%% save the input h5 dataset(s) to an HDF5 files (pytables)
 def normalize_path(path: str):
     return os.path.abspath(os.path.normpath(path))
+# print the data tree
+def print_tree(h5_path):
+    h5_path = normalize_path(h5_path)
+    with tables.open_file(h5_path, mode='r') as h5_file:
+        print(h5_file)
 
 def save2H5(h5_paths, group_names, filename, filetitle='Combined h5 file', savepath=None):
 
