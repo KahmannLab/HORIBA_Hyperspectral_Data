@@ -325,8 +325,10 @@ def moving_average_1d(y, window=7):
     if window % 2 == 0:
         raise ValueError("window size should be odd")
 
+    # pad the signal to handle edge effects
+    y_pad = np.pad(y, window // 2, mode="reflect")
     kernel = np.ones(window) / window
-    y_out = np.convolve(y, kernel, mode="same")
+    y_out = np.convolve(y_pad, kernel, mode="valid")
 
     return y_out
 def moving_average_3d_parallel(
