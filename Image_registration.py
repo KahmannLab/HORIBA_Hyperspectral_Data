@@ -274,15 +274,23 @@ def create_mask_ROI(img, ROI):
     return masked_img
 
 #%% Apply the existing transform (in .mat) to an image
-def transforminmat2img(transform_path, moving_img, fixed_img=None,plot=True):
+def transforminmat2img(transform_path, moving_img, fixed_img=None,inverse=False,plot=True):
     transform = ants.read_transform(transform_path)
-    moving_img = ants.from_numpy(moving_img)
+    moving = ants.from_numpy(moving_img)
     if fixed_img is not None:
-        fixed_img = ants.from_numpy(fixed_img)
-    transformed_img = transform.apply_to_image(moving_img,reference=fixed_img)
+        fixed = ants.from_numpy(fixed_img)
+    else:
+        fixed = moving
+    if inverse:
+        moving = fixed
+        fixed = ants.from_numpy(moving_img)
+        transform = transform.invert()
+        transformed_img = transform.apply_to_image(moving,reference=moving)
+    else:
+        transformed_img = transform.apply_to_image(moving,reference=fixed)
     if plot:
         if fixed_img is not None:
-            plt.imshow(fixed_img.numpy(), cmap='gray')
+            plt.imshow(fixed.numpy(), cmap='gray')
             plt.imshow(transformed_img.numpy(),alpha=0.5)
         else:
             plt.imshow(transformed_img.numpy())
