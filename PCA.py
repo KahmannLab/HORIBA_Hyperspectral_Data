@@ -227,7 +227,47 @@ def plot_PCs_combined(component_spectra, x_axis, component_idx,
             print("Warning: No save path provided, saving in the current directory.")
 
     plt.show()
+#%% Plot accumulated variance ratio
+def plot_accumulated_variance(pca,component_idx=20,savefig=False, figname=None, savepath=None,
+                              fontsize=12, labelpad=12):
+    """
+    Plot the accumulated variance ratio.
+    :param pca:
+    :param component_idx (int or list): the indices of the last component to be plotted. If int, the first n components will be plotted.
+                                        If list, specific components will be plotted, counting from 1.
+    :param savefig:
+    :param figname:
+    :param savepath:
+    :return:
+    """
+    # --- handle indices ---
+    if isinstance(component_idx, int):
+        indices = np.arange(component_idx)
+        x = indices + 1  # real component indices (1-based)
+    elif isinstance(component_idx, list):
+        indices = np.array([idx - 1 for idx in component_idx])
+        x = np.array(component_idx)
+    else:
+        raise ValueError("component_idx must be an int or a list of ints.")
 
+
+    # explained variance ratio
+    EVR = pca.explained_variance_ratio_
+
+    # explained variance of the selected components
+    EVR_sel = EVR[indices]
+
+    # accumulated variance with adding components
+    Acc_EVR = np.cumsum(EVR_sel)
+
+    # plot
+    plt.plot(x, Acc_EVR,'o')
+    plt.xticks(x,x)
+    plt.xlabel('Principal component index',labelpad=labelpad,fontsize=fontsize)
+    plt.ylabel('Accumulated explained variance ratio',labelpad=labelpad,fontsize=fontsize)
+    plt.tick_params(which='both', direction='in', right=True, top=True)
+    plt.tight_layout()
+    plt.show()
 #%% reconstruct the data
 def reconstruct_data(data, pca, component_idx=None, component_list=None):
     """
@@ -280,7 +320,48 @@ def reconstruct_data(data, pca, component_idx=None, component_list=None):
     print(f"MSE vs spatially averaged reference: {mse}")
 
     return datacube_reconstructed
+#%% get the data with reduced dimensionality
+def data_dim_reduced(data, pca, component_idx):
+    """
+    Project hyperspectral data onto the first n PCA components.
 
+    Parameters
+    ----------
+    data : ndarray, shape (H, W, B)
+        Original hyperspectral data cube.
+    pca : sklearn.decomposition.PCA
+        Fitted PCA object (trained on data reshaped to (-1, B)).
+    component_idx : int or list
+        Principal components to keep. If int, the first n components will be kept.
+        If list, specific components will be kept, counting from 1.
+
+    Returns
+    -------
+    projected_data : ndarray, shape (H, W, n_components)
+        PCA-reduced hyperspectral cube.
+    """
+    if isinstance(component_idx, int):
+        indices = np.arange(component_idx)
+    elif isinstance(component_idx, list):
+        indices = np.array([idx - 1 for idx in component_idx])
+    else:
+        raise ValueError("component_idx must be an int or a list of ints.")
+
+    H, W, B = data.shape
+
+    # Reshape to (n_pixels, n_bands)
+    data_2d = stack_spectra_columnwise(data)
+
+    # Project onto PCA space
+    data_pca = pca.transform(data_2d)
+
+    # Keep only first n components
+    data_pca = data_pca[:,indices]
+
+    # Reshape back to image cube
+    projected_data = unstack_spectra_columnwise(data_pca, H, W)
+
+    return projected_data
 #%% Score map
 # get the ideal scalebar length
 def get_scalebar_length(data, pixel_to_mum, percent=0.133335):
