@@ -175,11 +175,48 @@ def transform2dataset(fixed_data, moving_data, transform,
     :return: warped_data (np.ndarray): the registered image
     """
     warped_data = np.zeros(moving_data.shape)
+
     for i in range(moving_data.shape[2]):
         fixed = ants.from_numpy(fixed_data[:,:,i])
         moving = ants.from_numpy(moving_data[:,:,i])
         warped_data[:,:,i] = ants.apply_transforms(fixed=fixed, moving=moving, transformlist=transform[transform_type],
                                                    interpolator=interpolator, **kwargs).numpy()
+
+
+    # Crop if requested
+    if crop_to_overlap_flag:
+        if bbox is None:
+            print("⚠️ No bounding box provided for cropping. Computing overlap from data.")
+            _, bbox = return_overlap(warped_data.sum(axis=2), threshold=overlap_threshold, plot=False)
+
+        warped_data = crop_to_overlap(warped_data, bbox)
+    return warped_data
+
+def transforminmat2dataset(transform_path,fixed_data, moving_data,
+                           interpolation='nearestNeighbor',
+                           crop_to_overlap_flag=False, bbox=None, overlap_threshold=0,
+                           **kwargs):
+    """
+    Apply the transformation extracted from transform matrix saved to a 3d dataset
+    :param fixed_data (np.ndarray): the fixed image
+    :param moving_data (np.ndarray): the moving image
+    :param transform (dict): the transformation matrix
+    :param interpolator (str)(optional): the interpolator used for resampling the image, default is 'nearestNeighbor'
+    :param transform_type (str): the type of the transformation, default is 'fwdtransforms'
+    :param crop_to_overlap_flag (bool): whether to crop the registered data to the overlapping region, default is False
+    :param bbox (tuple): the bounding box of the overlapping region, default is None
+    :param overlap_threshold (float): the intensity threshold for overlap, default is 0
+    :return: warped_data (np.ndarray): the registered image
+    """
+    warped_data = np.zeros(moving_data.shape)
+    transform = ants.read_transform(transform_path)
+
+    for i in range(moving_data.shape[2]):
+        fixed = ants.from_numpy(fixed_data[:,:,i])
+        moving = ants.from_numpy(moving_data[:,:,i])
+        warped_data[:,:,i] = transform.apply_to_image(moving,reference=fixed,
+                                                        interpolation=interpolation, **kwargs).numpy()
+
     # Crop if requested
     if crop_to_overlap_flag:
         if bbox is None:
@@ -274,7 +311,8 @@ def create_mask_ROI(img, ROI):
     return masked_img
 
 #%% Apply the existing transform (in .mat) to an image
-def transforminmat2img(transform_path, moving_img, fixed_img=None,inverse=False,plot=True):
+def transforminmat2img(transform_path, moving_img, fixed_img=None,inverse=False,
+                       interpolation='linear',plot=True):
     transform = ants.read_transform(transform_path)
     moving = ants.from_numpy(moving_img)
     if fixed_img is not None:
@@ -285,7 +323,7 @@ def transforminmat2img(transform_path, moving_img, fixed_img=None,inverse=False,
         moving = fixed
         fixed = ants.from_numpy(moving_img)
         transform = transform.invert()
-        transformed_img = transform.apply_to_image(moving,reference=moving)
+        transformed_img = transform.apply_to_image(moving,reference=moving,interpolation=interpolation)
     else:
         transformed_img = transform.apply_to_image(moving,reference=fixed)
     if plot:
