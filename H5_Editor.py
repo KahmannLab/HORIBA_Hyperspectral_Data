@@ -309,3 +309,28 @@ def array2add(h5_path, group_path, array_name, data, *, overwrite=False):
         h5.create_array(group, array_name, obj=data)
 
     # File is GUARANTEED closed here
+
+#%% spectroscopy data extraction
+def spc_extract(h5_path, data_loc='/Datas/Data1', metadata_loc=None):
+    """
+    Function to extract data, signal axis and pixel size from an HDF5 (h5) file
+    :param h5_path: Path to the HDF5 file
+    :param data_loc: Location of the data in the file (default: '/Datas/Data1')
+    :param metadata_loc: Location of the metadata in the file (default: None)
+    :return: data, wavelength_axis
+    """
+
+    h5_path = normalize_path(h5_path)
+    h5_file = tables.open_file(h5_path, mode='r')
+    data_node = h5_file.get_node(data_loc)
+    data = data_node.read()
+    if metadata_loc:
+        metadata_node = h5_file.get_node(metadata_loc)
+    else:
+        metadata_node = data_node
+
+    wavelength = metadata_node.attrs['Axis1']
+    wavelength_unit = metadata_node.attrs['Axis1 Unit'].decode('latin-1')
+    wavelength_axis = {'Wavelength':wavelength, 'Unit':wavelength_unit}
+    h5_file.close()
+    return data, wavelength_axis
