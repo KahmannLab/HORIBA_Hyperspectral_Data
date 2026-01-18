@@ -541,7 +541,7 @@ def get_int(data, xaxis, wavelength):
     :param processed_data (np.ndarray)(optional): the registered data
     :return: int_map (np.ndarray): the intensity map at the given wavelength or wavenumber
     """
-    int = data.data[:,:,abs(xaxis-wavelength).argmin()]
+    int = data[:,:,abs(xaxis-wavelength).argmin()]
     return int
 # get the centre of mass (COM) of the hyperspectral data
 def get_com(data, xaxis, spectral_range=None):
@@ -885,7 +885,7 @@ def ratio_map(data, xaxis, wavelength1, wavelength2,px_size,
     :return:
     ratio (np.ndarray): the ratio map of the two intensity maps at the given wavelengths or wavenumbers
     """
-    ratio = get_ratio(data, wavelength1, wavelength2)
+    ratio = get_ratio(data, xaxis, wavelength1, wavelength2)
     # Get the scalebar length
     len_in_pix, length, width = get_scalebar_length(ratio, px_size, percent=frac_scalebar)
     fig, ax = plt.subplots()
