@@ -1669,7 +1669,10 @@ def plot_spectra(spc_list, wl_list, data_type,
     for i in range(len(spc_list)):
         if jacobian:
             wl_list[i],spc_list[i] = jacobian_conversion(spc_list[i], wl_list[i], plot=False)
-        ax.plot(wl_list[i], spc_list[i])
+        if label_list:
+            ax.plot(wl_list[i], spc_list[i],label = label_list[i])
+        else:
+            ax.plot(wl_list[i], spc_list[i])
     if data_type == 'PL':
         x_label = xlabel_PL
     elif data_type == 'Raman':
@@ -1694,6 +1697,8 @@ def plot_spectra(spc_list, wl_list, data_type,
                     fontsize=fontsize, va='bottom', ha='center',color=ax.lines[i].get_color())
     if ylim is not None:
         ax.set_ylim(ylim)
+    if label_list:
+        ax.legend()
     plt.tight_layout()
     if save_path is not None:
         plt.savefig(save_path,transparent=True,dpi=300)
