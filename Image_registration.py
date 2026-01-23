@@ -87,6 +87,114 @@ def crop_to_overlap(data, bbox):
     ymin, ymax, xmin, xmax = bbox
     return data[ymin:ymax, xmin:xmax, :]
 
+# get the overlap among several images (cut off the zero or NaN pixel)
+def get_overlapping_area(images,
+                         invalid_value=np.nan
+                        ):
+    """
+    Return the largest square region that is valid in all images.
+
+    Parameters
+    ----------
+    images : list of np.ndarray
+        Registered images (H, W) or (H, W, C)
+    invalid_value : float or None
+        Invalid pixel value (np.nan recommended)
+
+    Returns
+    -------
+    square_mask : np.ndarray (bool)
+        Mask with True only in the largest valid square
+    bbox : tuple or None
+        (ymin, ymax, xmin, xmax) of the square, or None if no overlap
+    """
+
+    H, W = images[0].shape[:2]
+
+    # ---- build common validity mask ----
+    masks = []
+    for img in images:
+        if invalid_value is None:
+            mask = np.ones((H, W), dtype=bool)
+        elif np.isnan(invalid_value):
+            mask = (
+                ~np.isnan(img).any(axis=-1)
+                if img.ndim == 3
+                else ~np.isnan(img)
+            )
+        else:
+            mask = (
+                (img != invalid_value).all(axis=-1)
+                if img.ndim == 3
+                else img != invalid_value
+            )
+        masks.append(mask)
+
+    overlap_mask = np.logical_and.reduce(masks)
+
+    coords = np.argwhere(overlap_mask)
+
+    if coords.size == 0:
+        return np.zeros((H, W), dtype=bool)
+    else:
+        # ---- bounding box of common overlap ----
+        ymin, xmin = coords.min(axis=0)
+        ymax, xmax = coords.max(axis=0) + 1
+
+        height = ymax - ymin
+        width  = xmax - xmin
+        side   = min(height, width)
+
+        # ---- center square inside bbox ----
+        y0 = ymin + (height - side) // 2
+        x0 = xmin + (width  - side) // 2
+
+        square_mask = np.zeros((H, W), dtype=bool)
+        square_mask[y0:y0+side, x0:x0+side] = True
+
+        return square_mask
+
+def crop_with_mask(data, mask):
+    """
+    Crop 2D or 3D data using a 2D boolean mask.
+
+    Parameters
+    ----------
+    data : ndarray
+        2D (H, W) or 3D (H, W, N) array
+    mask : ndarray (H, W)
+        Boolean mask defining valid region
+
+    Returns
+    -------
+    cropped_data : ndarray
+        Cropped data with same dimensionality as input
+    cropped_mask : ndarray (h, w)
+        Cropped mask
+    """
+    if data.shape[:2] != mask.shape:
+        raise ValueError("Mask shape must match spatial dimensions of data")
+
+    if mask.dtype != bool:
+        raise ValueError("Mask must be boolean")
+
+    rows = np.any(mask, axis=1)
+    cols = np.any(mask, axis=0)
+
+    if not rows.any() or not cols.any():
+        raise ValueError("Mask contains no valid pixels")
+
+    rmin, rmax = np.where(rows)[0][[0, -1]]
+    cmin, cmax = np.where(cols)[0][[0, -1]]
+
+    if data.ndim == 2:
+        cropped_data = data[rmin:rmax+1, cmin:cmax+1]
+    elif data.ndim == 3:
+        cropped_data = data[rmin:rmax+1, cmin:cmax+1, :]
+    else:
+        raise ValueError("Data must be 2D or 3D")
+
+    return cropped_data
 #%% register images using ANTsPy
 # Image registration using ANTs with optional parameters: https://antspy.readthedocs.io/en/latest/registration.html
 @functools.wraps(ants.registration)
