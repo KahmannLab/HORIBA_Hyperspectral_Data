@@ -6,6 +6,7 @@ from matplotlib.ticker import MultipleLocator, AutoMinorLocator
 import os
 from mpl_toolkits.axes_grid1.anchored_artists import AnchoredSizeBar
 import copy
+from joblib import Parallel, delayed
 #%% extract the xml file paths
 def xml_paths(folder_path, endswith='.xml', IDs=None):
     """
@@ -66,384 +67,6 @@ def load_xml(file_path,remove_spikes=False,threshold='auto', remove_negatives=Fa
             ylabel = 'Intensity / a.u.'
         visual_data(data.data, x_axis=data.axes_manager[2].axis, xlabel=xlabel, ylabel=ylabel)
     return data
-#%% Remove spikes from 3d dataset with numba for speed up by parallelization
-from scipy.signal import find_peaks, peak_widths
-from scipy.interpolate import interp1d
-
-def spike_removal_1d(
-    y,
-    width_threshold,
-    prominence_threshold=None,
-    window=10,
-    rel_height=0.8,
-    interp_type="linear",
-):
-    """
-    Remove narrow spikes from a 1D signal by peak detection and interpolation.
-
-    Parameters
-    ----------
-    y : array_like
-        Input 1D signal
-    width_threshold : float
-        Maximum peak width considered a spike
-    prominence_threshold : float or None
-        Prominence threshold for peak detection
-    window : int
-        Half-width of local interpolation window
-    rel_height : float
-        Relative height used to estimate peak extent
-    interp_type : str
-        Interpolation type passed to scipy.interpolate.interp1d
-
-    Returns
-    -------
-    y_out : ndarray
-        Despiked signal
-    """
-    y = np.asarray(y)
-    N = y.size
-    y_out = y.copy()
-
-    # --- Detect peaks ---
-    peaks, _ = find_peaks(y, prominence=prominence_threshold)
-    if len(peaks) == 0:
-        return y_out
-
-    widths, _, left_ips, right_ips = peak_widths(y, peaks, rel_height=rel_height)
-
-    # --- Mark spike regions ---
-    spikes = np.zeros(N, dtype=bool)
-
-    for w, a, b in zip(widths, left_ips, right_ips):
-        if w < width_threshold:
-            lo = max(int(a) - 1, 0)
-            hi = min(int(b) + 1, N - 1)
-            spikes[lo : hi + 1] = True
-
-    # --- Interpolate over spikes ---
-    for i in np.where(spikes)[0]:
-        lo = max(0, i - window)
-        hi = min(N, i + window + 1)
-
-        neighbors = np.arange(lo, hi)
-        neighbors = neighbors[~spikes[neighbors]]
-
-        if neighbors.size < 2:
-            continue
-
-        interp = interp1d(
-            neighbors,
-            y[neighbors],
-            kind=interp_type,
-            bounds_error=False,
-            fill_value="extrapolate",
-        )
-
-        y_out[i] = interp(np.clip(i, neighbors.min(), neighbors.max()))
-
-    return y_out
-
-from joblib import Parallel, delayed
-
-def spike_removal_3d(
-    cube,
-    width_threshold,
-    prominence_threshold=None,
-    window=10,
-    rel_height=0.8,
-    interp_type="linear",
-    n_jobs=-1,
-):
-    """
-    Apply 1D spike removal along the last axis of a 3D cube.
-    """
-    X, Y, _ = cube.shape
-    cube_out = np.empty_like(cube)
-
-    def process(ix, iy):
-        return spike_removal_1d(
-            cube[ix, iy],
-            width_threshold,
-            prominence_threshold,
-            window,
-            rel_height,
-            interp_type,
-        )
-
-    results = Parallel(n_jobs=n_jobs)(
-        delayed(process)(ix, iy)
-        for ix in range(X)
-        for iy in range(Y)
-    )
-
-    k = 0
-    for ix in range(X):
-        for iy in range(Y):
-            cube_out[ix, iy] = results[k]
-            k += 1
-
-    return cube_out
-#%% FFT filtering for oscillating pattern removal
-def plot_fft_spectrum(
-    y,
-    title="FFT magnitude spectrum",
-    log_scale=True,
-    xlim=None,
-):
-    """
-    Plot the FFT magnitude spectrum of a 1D signal.
-
-    Parameters
-    ----------
-    y : array_like
-        Input signal (e.g. Raman spectrum)
-    title : str
-        Plot title
-    log_scale : bool
-        Use logarithmic y-axis for better visibility
-    xlim: list
-        for zoom-in
-    """
-    y = np.asarray(y, dtype=float)
-    N = y.size
-
-    # FFT
-    Y = np.fft.fft(y)
-    mag = np.abs(Y)
-
-    # Positive frequencies only
-    freqs = np.arange(N // 2)
-    mag = mag[: N // 2]
-
-    plt.figure()
-    plt.plot(freqs, mag)
-    plt.xlabel("FFT frequency index")
-    plt.ylabel("Magnitude")
-    plt.title(title)
-    plt.xlim(xlim)
-    if log_scale:
-        plt.yscale("log")
-
-    plt.tight_layout()
-    plt.show()
-
-def fft_notch_filter_1d(
-    y,
-    notch_freqs,
-    notch_width=1):
-    """
-    Remove oscillatory components from a 1D signal using FFT notch filtering.
-
-    Parameters
-    ----------
-    y : array_like
-        Input spectrum
-    notch_freqs : list or array
-        Indices of FFT frequencies to suppress (positive frequencies)
-    notch_width : int
-        Half-width of each notch (in frequency bins)
-
-    Returns
-    -------
-    y_out : ndarray
-        Filtered spectrum
-    """
-    y = np.asarray(y, dtype=float)
-    N = y.size
-
-    # FFT
-    Y = np.fft.fft(y)
-
-    for f in notch_freqs:
-        f = int(f)
-        lo = max(f - notch_width, 0)
-        hi = min(f + notch_width + 1, N)
-
-        # Remove positive and symmetric negative frequencies
-        Y[lo:hi] = 0
-        Y[-hi:-lo] = 0
-
-    # Inverse FFT
-    y_out = np.real(np.fft.ifft(Y))
-
-    return y_out
-
-def fft_notch_filter_3d(
-    cube,
-    notch_freqs,
-    notch_width=1,
-    n_jobs=-1):
-    """
-    Apply FFT notch filtering along the spectral axis of a 3D hyperspectral cube.
-    """
-    X, Y, _ = cube.shape
-    cube_out = np.empty_like(cube, dtype=float)
-
-    def process(ix, iy):
-        return fft_notch_filter_1d(
-            cube[ix, iy],
-            notch_freqs=notch_freqs,
-            notch_width=notch_width,
-        )
-
-    results = Parallel(n_jobs=n_jobs)(
-        delayed(process)(ix, iy)
-        for ix in range(X)
-        for iy in range(Y)
-    )
-
-    k = 0
-    for ix in range(X):
-        for iy in range(Y):
-            cube_out[ix, iy] = results[k]
-            k += 1
-
-    return cube_out
-#%% Moving average smoother for Gaussian noise removal
-def moving_average_1d(y, window=7):
-    """
-    Moving average (mean) smoother for 1D spectra.
-
-    Parameters
-    ----------
-    y : array_like
-        Input spectrum
-    window : int
-        Window size (odd recommended)
-
-    Returns
-    -------
-    y_out : ndarray
-        Smoothed spectrum
-    """
-    y = np.asarray(y, dtype=float)
-
-    if window < 1:
-        raise ValueError("window must be >= 1")
-
-    if window % 2 == 0:
-        raise ValueError("window size should be odd")
-
-    # pad the signal to handle edge effects
-    y_pad = np.pad(y, window // 2, mode="reflect")
-    kernel = np.ones(window) / window
-    y_out = np.convolve(y_pad, kernel, mode="valid")
-
-    return y_out
-def moving_average_3d_parallel(
-    cube,
-    window=7,
-    n_jobs=-1,
-):
-    """
-    Parallel moving average smoothing for hyperspectral data.
-    """
-    X, Y, _ = cube.shape
-    cube_out = np.empty_like(cube, dtype=float)
-
-    def process(ix, iy):
-        return moving_average_1d(
-            cube[ix, iy], window=window
-        )
-
-    results = Parallel(n_jobs=n_jobs)(
-        delayed(process)(ix, iy)
-        for ix in range(X)
-        for iy in range(Y)
-    )
-
-    k = 0
-    for ix in range(X):
-        for iy in range(Y):
-            cube_out[ix, iy] = results[k]
-            k += 1
-
-    return cube_out
-#%% Adaptive median filter for despiking and denoising
-def adaptive_median_filter_1d(
-    y,
-    window=7,
-    spike_threshold=3.5,
-    smooth_weight=0.5,
-):
-    """
-    Adaptive median filter that handles both impulse noise (spikes)
-    and Gaussian noise in 1D spectra.
-
-    Parameters
-    ----------
-    y : array_like
-        Input 1D signal (spectrum)
-    window : int
-        Odd window size
-    spike_threshold : float
-        Threshold (in MAD units) to classify a point as a spike
-    smooth_weight : float
-        Weight between median and mean for non-spike points (0–1)
-
-    Returns
-    -------
-    y_out : ndarray
-        Filtered signal
-    """
-    y = np.asarray(y, dtype=float)
-    N = y.size
-    half = window // 2
-    y_out = y.copy()
-
-    for i in range(N):
-        lo = max(0, i - half)
-        hi = min(N, i + half + 1)
-        local = y[lo:hi]
-
-        median = np.median(local)
-        mad = np.median(np.abs(local - median)) + 1e-12
-        mean = local.mean()
-
-        # Spike detection using robust z-score
-        z = np.abs(y[i] - median) / mad
-
-        if z > spike_threshold:
-            # Impulse noise → median replacement
-            y_out[i] = median
-        else:
-            # Gaussian noise → mild smoothing
-            y_out[i] = (
-                smooth_weight * median
-                + (1 - smooth_weight) * mean
-            )
-
-    return y_out
-
-
-def adaptive_median_filter_3d_parallel(
-    cube,
-    n_jobs=-1,
-    **kwargs,
-):
-    """
-    Parallel adaptive median filtering along spectral axis of a 3D cube.
-    """
-    X, Y, _ = cube.shape
-    cube_out = np.empty_like(cube)
-
-    def process(ix, iy):
-        return adaptive_median_filter_1d(cube[ix, iy], **kwargs)
-
-    results = Parallel(n_jobs=n_jobs)(
-        delayed(process)(ix, iy)
-        for ix in range(X)
-        for iy in range(Y)
-    )
-
-    k = 0
-    for ix in range(X):
-        for iy in range(Y):
-            cube_out[ix, iy] = results[k]
-            k += 1
-
-    return cube_out
 #%% visualize the hyperspectral data
 def visual_data(data,
                 x_axis,
@@ -578,6 +201,64 @@ def get_ratio(data, xaxis, wavelength1, wavelength2):
     int2[int2 == 0] = 1e-10  # Set a small value to avoid division by zero
     ratio = int1 / int2
     return ratio
+
+#%% get normalized intentisy: normalize the peak intensity to the baseline
+def _compute_norm_peak(spectrum, wavenumbers, peak_region, baseline_region):
+    """Helper for a single spectrum."""
+    peak_mask = (wavenumbers >= peak_region[0]) & (wavenumbers <= peak_region[1])
+    baseline_mask = (wavenumbers >= baseline_region[0]) & (wavenumbers <= baseline_region[1])
+
+    peak_value = np.max(spectrum[peak_mask])
+    baseline_value = np.mean(spectrum[baseline_mask])
+
+    if baseline_value == 0:
+        return np.nan  # avoid divide by zero
+
+    return peak_value / baseline_value
+
+def normalized_peak_map(
+        data3d,  # shape (H, W, N)
+        wavenumbers,  # shape (N,)
+        peak_region,
+        baseline_region,
+        n_jobs=-1  # use all cores by default
+):
+    """
+    Compute normalized peak intensity map for 3D Raman data.
+
+    Parameters
+    ----------
+    data3d : np.ndarray
+        Raman data cube of shape (height, width, wavenumber).
+    wavenumbers : np.ndarray
+        1D array of wavenumbers (length N).
+    peak_region : tuple
+        (min_wn, max_wn) region containing the peak.
+    baseline_region : tuple
+        (min_wn, max_wn) region used to compute baseline.
+    n_jobs : int
+        Number of parallel jobs for computation (-1 = all cores).
+
+    Returns
+    -------
+    norm_map : np.ndarray
+        2D array of normalized peak intensities (height x width).
+    """
+    H, W, N = data3d.shape
+    norm_map = np.zeros((H, W), dtype=float)
+
+    # Flatten spatial dimensions for parallel processing
+    spectra = data3d.reshape(-1, N)
+
+    # Parallel computation
+    results = Parallel(n_jobs=n_jobs)(
+        delayed(_compute_norm_peak)(spec, wavenumbers, peak_region, baseline_region)
+        for spec in spectra
+    )
+
+    # Reshape back to 2D map
+    norm_map = np.array(results).reshape(H, W)
+    return norm_map
 #%% get the ideal scalebar length
 def get_scalebar_length(data, pixel_to_mum, percent=0.133335):
     """
@@ -922,7 +603,7 @@ def plot_colormap(data, scale=None, frac_scalebar=0.133335,
                   **kwargs):
     """
     Plot the colormap of the hyperspectral data
-    :param data (np.ndarray): the hyperspectral data
+    :param data (np.ndarray): the 2d data
     :param scale (float)(optional): the scale to be used for the scalebar of the colormap, default is None
     :param frac_scalebar (float)(optional): the fraction of the scalebar length to the image length, default is 0.133335 (13%)
     :param fontsize (int)(optional): the font size of the colorbar label, default is 12
@@ -1834,27 +1515,80 @@ def plot_hist(dataMap, labels=None, colorstyle='default',
     if save_path is not None:
         plt.savefig(save_path,transparent=True,dpi=300)
     plt.show()
-#%% Plot 2D histogram of the correlative data
-def plot_2d_hist(data_list, bins=50,labels=['PL intensity / a.u.','Raman intensity / a.u.'],save_path=None):
-    '''
-    Plot 2D histogram of the intensity maps
-    :param data_list (list): the list of 2 datasets, for example, the PL and Raman intensity maps
-    :param bins (int): the number of bins, default=50
-    :param labels (list): the labels of the x and y axes
-    :param save_path (str)(optional): the path to save the figure
-    '''
-    data1_flat = data_list[0].flatten()
-    data2_flat = data_list[1].flatten()
-    histogram, x_edges, y_edges = np.histogram2d(data1_flat, data2_flat, bins=bins)
+#%% Plot correlation as 2D histogram or density scatter
+from scipy.stats import gaussian_kde
+
+def plot_2d_density(
+    data_list,
+    bins=50,
+    labels=['PL intensity / a.u.', 'Raman intensity / a.u.'],
+    method='density_scatter',   # 'hist2d' or 'density_scatter'
+    cmap='viridis',
+    s=5,
+    save_path=None
+):
+    """
+    Plot correlation between two variables using 2D histogram or density scatter.
+
+    Parameters
+    ----------
+    data_list : list
+        List of two datasets (e.g., PL and Raman intensity maps)
+    bins : int
+        Number of bins (used for hist2d)
+    labels : list
+        Axis labels [xlabel, ylabel]
+    method : str
+        'hist2d' or 'density_scatter'
+    cmap : str
+        Colormap
+    s : int
+        Marker size for scatter
+    save_path : str, optional
+        Path to save figure
+    """
+
+    x = data_list[0].ravel()
+    y = data_list[1].ravel()
+
+    # remove invalid points
+    mask = np.isfinite(x) & np.isfinite(y)
+    x = x[mask]
+    y = y[mask]
+
     fig, ax = plt.subplots()
-    cmap = ax.pcolormesh(x_edges, y_edges, histogram.T, cmap='viridis')
+
+    if method == 'hist2d':
+        hist, x_edges, y_edges = np.histogram2d(x, y, bins=bins)
+        im = ax.pcolormesh(x_edges, y_edges, hist.T, cmap=cmap)
+        cbar_label = 'Counts'
+
+    elif method == 'density_scatter':
+        # KDE-based density
+        xy = np.vstack([x, y])
+        density = gaussian_kde(xy)(xy)
+
+        # sort points by density (important for visibility)
+        idx = density.argsort()
+        x, y, density = x[idx], y[idx], density[idx]
+
+        im = ax.scatter(x, y, c=density, s=s, cmap=cmap)
+        cbar_label = 'Point density'
+
+    else:
+        raise ValueError("method must be 'hist2d' or 'density_scatter'")
+
     ax.set_xlabel(labels[0])
     ax.set_ylabel(labels[1])
-    cbar = fig.colorbar(cmap, ax=ax)
-    cbar.set_label('Probability density')
+
+    cbar = fig.colorbar(im, ax=ax)
+    cbar.set_label(cbar_label)
+
     plt.tight_layout()
+
     if save_path is not None:
-        plt.savefig(save_path, transparent=True, dpi=300)
+        plt.savefig(save_path, dpi=300, transparent=True)
+
     plt.show()
 #%% Plot the grayscale white light reflection image
 def plot_img(img_data,ROI=None,adj_hist=False,frac_scalebar=0.133335,save_path=None):
