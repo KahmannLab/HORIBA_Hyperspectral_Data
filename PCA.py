@@ -229,7 +229,7 @@ def plot_PCs_combined(component_spectra, x_axis, component_idx,
     plt.show()
 #%% Plot accumulated variance ratio
 def plot_accumulated_variance(pca,component_idx=20,savefig=False, figname=None, savepath=None,
-                              fontsize=12, labelpad=12):
+                              fontsize=12, labelpad=12,threshold=0.999):
     """
     Plot the accumulated variance ratio.
     :param pca:
@@ -262,6 +262,8 @@ def plot_accumulated_variance(pca,component_idx=20,savefig=False, figname=None, 
 
     # plot
     plt.plot(x, Acc_EVR,'o')
+    # plot a horizontal line to indicate the threshold
+    plt.axhline(threshold, color='red', linestyle='--')
     plt.xticks(x,x)
     plt.xlabel('Principal component index',labelpad=labelpad,fontsize=fontsize)
     plt.ylabel('Accumulated explained variance ratio',labelpad=labelpad,fontsize=fontsize)
@@ -357,6 +359,11 @@ def data_dim_reduced(data, pca, component_idx):
 
     # Keep only first n components
     data_pca = data_pca[:,indices]
+
+    # calculated total explained variance ratio
+    EVR = pca.explained_variance_ratio_
+    EVR_tot = np.sum(EVR[indices])
+    print(f"Total explained variance: {EVR_tot}")
 
     # Reshape back to image cube
     projected_data = unstack_spectra_columnwise(data_pca, H, W)
