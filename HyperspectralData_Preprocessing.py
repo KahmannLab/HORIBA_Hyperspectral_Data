@@ -353,12 +353,12 @@ def moving_average_3d_parallel(
 #%% Baseline correction via Asymmetric least square
 from pybaselines import Baseline
 
-def als_baseline_1d(spectrum, lam=1e5, p=0.01):
+def als_baseline_1d(spectrum, lam=1e5, p=0.01, **alskwargs):
     """
     Apply ALS baseline to a single spectrum.
     """
     bl = Baseline()
-    baseline, _ = bl.asls(spectrum, lam=lam, p=p)
+    baseline, _ = bl.asls(spectrum, lam=lam, p=p,**alskwargs)
     return baseline
 
 def pixelwise_als_baseline(
@@ -367,6 +367,7 @@ def pixelwise_als_baseline(
     p=0.01,
     n_jobs=-1,
     return_baseline=False,
+    **alskwargs
 ):
     """
     Pixel-wise ALS baseline subtraction for Raman hyperspectral cube.
@@ -395,7 +396,7 @@ def pixelwise_als_baseline(
 
     # Parallel ALS
     baselines = Parallel(n_jobs=n_jobs, prefer="threads")(
-        delayed(als_baseline_1d)(spec, lam, p)
+        delayed(als_baseline_1d)(spec, lam, p, **alskwargs)
         for spec in spectra
     )
 
