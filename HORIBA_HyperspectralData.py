@@ -1153,6 +1153,50 @@ def point_marker(map_data,px_size, XY,cbarlabel='Intensity / a.u.',frac_scalebar
     plt.show()
 
 #%% Extract the spectrum at the points of interest and plot them on the same figure
+def extract_averaged_spectra(data, XY, window=3):
+    """
+    Extract spectra averaged over a window x window neighborhood
+    centered at each (x, y).
+
+    Parameters
+    ----------
+    data : np.ndarray
+        Hyperspectral data of shape (H, W, Nspec)
+    XY : tuple or list of tuples
+        (x, y) or [(x1, y1), (x2, y2), ...]
+    window : int
+        Window size (default = 3 → 3x3 = nearest 9 pixels)
+
+    Returns
+    -------
+    avg_spectra : list of np.ndarray
+        List of averaged spectra, one per point
+    """
+
+    if not isinstance(XY, list):
+        XY = [XY]
+
+    H, W, _ = data.shape
+    half = window // 2
+
+    avg_spectra = []
+
+    for x, y in XY:
+        # Define window bounds (clipped to image)
+        x1 = max(0, x - half)
+        x2 = min(W, x + half + 1)
+        y1 = max(0, y - half)
+        y2 = min(H, y + half + 1)
+
+        # Extract local cube
+        local_cube = data[y1:y2, x1:x2, :]  # (wy, wx, Nspec)
+
+        # Average over spatial dimensions
+        avg_spec = np.nanmean(local_cube, axis=(0, 1))
+        avg_spectra.append(avg_spec)
+
+    return avg_spectra
+
 def Spectrum_extracted(data, xaxis, XY, data_type,
                        jacobian=False, xlabel_PL='Wavelength / nm',ylabel=None,
                        major_locator=50,n_minor_locator=2,
@@ -1160,7 +1204,8 @@ def Spectrum_extracted(data, xaxis, XY, data_type,
                        fontsize=12,labelpad=10, labelsize=12,
                        sci_notation_y=False,
                        colorseq='Dark2', colors_udef=None,
-                       x_lim=None,y_lim=None,save_path=None):
+                       x_lim=None,y_lim=None,save_path=None,
+                       **kwargs):
     """
     Plot the spectrum at the points of interest on the same figure
     :param data (np.ndarray): the hyperspectral data
@@ -1201,7 +1246,7 @@ def Spectrum_extracted(data, xaxis, XY, data_type,
     for i in range(len(XY)):
         x = XY[i][0]
         y = XY[i][1]
-        intensity = intensities[y, x, :]
+        intensity = extract_averaged_spectra(intensities, [(x, y)], **kwargs)[0]
         if jacobian:
             Spectr, intensity = jacobian_conversion(intensity, Spectr, plot=False)
         ax.plot(Spectr, intensity, color=colors[i], linewidth=linewidth)
