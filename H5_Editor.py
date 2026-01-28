@@ -30,6 +30,24 @@ def print_tree(h5_path):
     with tables.open_file(h5_path, mode='r') as h5_file:
         print(h5_file)
 
+# print node attributes
+def print_node_attributes(h5_path: str, node_path: str):
+    h5_path = normalize_path(h5_path)
+
+    with tables.open_file(h5_path, mode="r") as h5:
+        node = h5.get_node(node_path)
+
+        attrs = node._v_attrs if hasattr(node, "_v_attrs") else node.attrs
+
+        print(f"Attributes for node: {node_path}")
+
+        if not attrs._v_attrnames:
+            print("  (No attributes found)")
+            return
+
+        for name in attrs._v_attrnames:
+            print(f"  {name}: {getattr(attrs, name)}")
+
 def save2H5(h5_paths, group_names, filename, filetitle='Combined h5 file', savepath=None):
 
     if savepath is None:
