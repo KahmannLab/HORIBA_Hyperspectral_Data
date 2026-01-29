@@ -64,7 +64,7 @@ def sklearn_PCA(data,ScreePlot=False,n_PCs=None,
         plt.gca().xaxis.set_minor_locator(AutoMinorLocator(1))
         plt.tick_params(which='both', direction='in', right=True, top=True)
         # plt.yticks(fontsize=10)
-        plt.xlabel('Number of components')
+        plt.xlabel('Principal component index')
         plt.ylabel('Explained variance ratio')
         plt.yscale('log')
         plt.title('Explained variance ratio by PCA')
@@ -229,7 +229,7 @@ def plot_PCs_combined(component_spectra, x_axis, component_idx,
     plt.show()
 #%% Plot accumulated variance ratio
 def plot_accumulated_variance(pca,component_idx=20,savefig=False, figname=None, savepath=None,
-                              fontsize=12, labelpad=12,threshold=0.999):
+                              fontsize=12, labelpad=12,threshold=0.95):
     """
     Plot the accumulated variance ratio.
     :param pca:
@@ -263,65 +263,160 @@ def plot_accumulated_variance(pca,component_idx=20,savefig=False, figname=None, 
     # plot
     plt.plot(x, Acc_EVR,'o')
     # plot a horizontal line to indicate the threshold
-    plt.axhline(threshold, color='red', linestyle='--')
+    if threshold is not None:
+        plt.axhline(threshold, color='red', linestyle='--')
     plt.xticks(x,x)
-    plt.xlabel('Principal component index',labelpad=labelpad,fontsize=fontsize)
+    plt.xlabel('Number of components',labelpad=labelpad,fontsize=fontsize)
     plt.ylabel('Accumulated explained variance ratio',labelpad=labelpad,fontsize=fontsize)
     plt.tick_params(which='both', direction='in', right=True, top=True)
     plt.tight_layout()
     plt.show()
+
 #%% reconstruct the data
-def reconstruct_data(data, pca, component_idx=None, component_list=None):
+def reconstruct_data(
+    data,
+    pca,
+    component_idx=None,
+    component_list=None,
+    return_metrics=False,
+):
     """
-       Reconstruct data from PCA scores using a subset of components.
+    Reconstruct data from PCA scores using a subset of components.
 
-       Parameters:
-           data : array-like, shape (n_samples, n_features)
-           pca : trained sklearn PCA object
-           component_idx : int, optional
-                   Number of components to use
-           component_list : list of int, optional
-               Specific component indices to use counting from 1
+    Parameters
+    ----------
+    data : np.ndarray
+        Hyperspectral cube of shape (nx, ny, n_features)
+    pca : sklearn.decomposition.PCA
+        Pre-fitted PCA object
+    component_idx : int, optional
+        Number of leading components to use
+    component_list : list of int, optional
+        Specific components to use (1-based indexing)
+    return_metrics : bool
+        If True, return a metrics dictionary
 
-       Returns:
-              datacube_reconstructed : np.ndarray
-       """
+    Returns
+    -------
+    datacube_reconstructed : np.ndarray
+        Reconstructed data cube
+    metrics : dict (optional)
+        Validation metrics
+    """
+
+    # --- reshape ---
     flat_data = stack_spectra_columnwise(data)
-    data_pca = pca.fit_transform(flat_data)
+
+    # --- project using pre-fitted PCA ---
+    scores = pca.transform(flat_data)
+
+    # --- component selection ---
     if component_idx is not None:
-        # Select first n_first components
         selected_indices = list(range(component_idx))
     elif component_list is not None:
-        # Select specific components
-        selected_indices = [comp - 1 for comp in component_list]  # Convert to zero-based index
+        selected_indices = [c - 1 for c in component_list]
     else:
-        raise ValueError("Either the index of component or component_list must be provided.")
+        raise ValueError("Specify component_idx or component_list.")
 
-    # Extract scores and components
-    data_pca_sel = data_pca[:, selected_indices]
+    # --- reconstruct ---
+    scores_sel = scores[:, selected_indices]
     components_sel = pca.components_[selected_indices]
 
-    # Reconstruct data
-    data_reconstructed = np.dot(data_pca_sel, components_sel) + pca.mean_
-    datacube_reconstructed = unstack_spectra_columnwise(data_reconstructed, data.shape[0], data.shape[1])
+    flat_reconstructed = scores_sel @ components_sel + pca.mean_
+    datacube_reconstructed = unstack_spectra_columnwise(
+        flat_reconstructed, data.shape[0], data.shape[1]
+    )
 
-    # calculate the variance
-    r = data - datacube_reconstructed
-    var = np.var(r)
-    print(f"Variance: {var}")
-    # calculated total explained variance ratio
+    # =======================
+    # Validation metrics
+    # =======================
+    metrics = {}
+
+    # 1. Residual variance (energy in discarded subspace)
+    residual = data - datacube_reconstructed
+    metrics["residual_variance"] = np.var(residual)
+
+    # 2. Total explained variance ratio
     EVR = pca.explained_variance_ratio_
-    EVR_tot = np.sum(EVR[selected_indices])
-    print(f"Total explained variance: {EVR_tot}")
-    # calculate the MSE (reference data is given by the average spectrum)
-    # mean over x and y, keep spectral dimension
-    avg_spectrum = np.mean(data, axis=(0, 1))  # shape (n_features,)
-    reference_cube = np.tile(avg_spectrum, (data.shape[0], data.shape[1], 1))
-    # --- MSE vs reference ---
-    mse = np.mean((datacube_reconstructed - reference_cube) ** 2)
-    print(f"MSE vs spatially averaged reference: {mse}")
+    metrics["explained_variance_total"] = np.sum(EVR[selected_indices])
+
+    # 3. Mean spectrum fidelity (RECOMMENDED)
+    orig_mean = np.mean(data, axis=(0, 1))
+    recon_mean = np.mean(datacube_reconstructed, axis=(0, 1))
+    metrics["mse_mean_spectrum"] = np.mean((orig_mean - recon_mean) ** 2)
+
+    # Optional normalized version
+    metrics["nmse_mean_spectrum"] = (
+        metrics["mse_mean_spectrum"] / np.mean(orig_mean**2)
+    )
+    # 4. Spatial consistency (RECOMMENDED)
+    orig_var_map = np.var(data, axis=2)
+    recon_var_map = np.var(datacube_reconstructed, axis=2)
+    consistency = np.mean(recon_var_map / orig_var_map)
+    metrics["spatial_consistency"] = consistency
+    if return_metrics:
+        return datacube_reconstructed, metrics
+
+    # default behavior (print + return cube)
+    print(f"Residual variance: {metrics['residual_variance']:.3e}")
+    print(f"Total explained variance: {metrics['explained_variance_total']:.4f}")
+    print(f"MSE (mean spectrum): {metrics['mse_mean_spectrum']:.3e}")
+    print(f"Spatial consistency: {metrics['spatial_consistency']:.3f}")
 
     return datacube_reconstructed
+#%% Plot PCA denoising metrics
+def plot_pca_denoising_metrics(
+    data,
+    pca,
+    component_range,
+):
+    """
+    Plot residual variance and mean-spectrum MSE vs number of PCA components.
+
+    Parameters
+    ----------
+    data : np.ndarray
+        Hyperspectral cube (nx, ny, n_features)
+    pca : sklearn.decomposition.PCA
+        Pre-fitted PCA object
+    component_range : iterable of int
+        Numbers of components to evaluate (e.g. range(1, 30))
+    """
+
+    residual_vars = []
+    mse_means = []
+
+    for n_comp in component_range:
+        _, metrics = reconstruct_data(
+            data,
+            pca,
+            component_idx=n_comp,
+            return_metrics=True,
+        )
+        residual_vars.append(metrics["residual_variance"])
+        mse_means.append(metrics["mse_mean_spectrum"])
+
+    residual_vars = np.array(residual_vars)
+    mse_means = np.array(mse_means)
+
+    # =======================
+    # Plot
+    # =======================
+    fig, ax1 = plt.subplots(figsize=(6, 4))
+
+    ax1.plot(component_range, residual_vars,'b', marker="o")
+    ax1.set_xlabel("Number of PCA components")
+    ax1.set_ylabel("Residual variance")
+    ax1.tick_params(axis="y", labelcolor="b")
+
+    ax2 = ax1.twinx()
+    ax2.plot(component_range, mse_means, 'r', marker="s")
+    ax2.set_ylabel("MSE (mean spectrum)")
+    ax2.tick_params(axis="y", labelcolor="r")
+
+    ax1.set_title("PCA denoising performance vs number of components")
+    fig.tight_layout()
+    plt.show()
 #%% get the data with reduced dimensionality
 def data_dim_reduced(data, pca, component_idx):
     """
