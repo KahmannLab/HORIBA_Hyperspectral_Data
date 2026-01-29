@@ -361,13 +361,40 @@ def als_baseline_1d(spectrum, lam=1e5, p=0.01, **alskwargs):
     baseline, _ = bl.asls(spectrum, lam=lam, p=p,**alskwargs)
     return baseline
 
+def arpls_baseline_1d(spectrum,lam=1e5,**arplskwargs):
+    """
+    Apply asymmetrically reweighted penalized least squares
+    """
+    bl = Baseline()
+    baseline, _ =bl.arpls(spectrum, lam=lam, **arplskwargs)
+    return baseline
+
+def derpsals_baseline_1d(spectrum,lam=1e5,p=0.01, **derpskwargs):
+    """
+    Apply derivative peak-screening ALS baseline to a single spectrum.
+
+    Parameters
+    ---------
+    spectrum : 1d array
+    lam : float
+    p : float
+
+    Returns
+    -------
+    baseline : 1d array
+    """
+    bl = Baseline()
+    baseline, _ = bl.derpsalsa(spectrum, lam=lam, p=p,**derpskwargs)
+    return baseline
+
 def pixelwise_als_baseline(
     cube,
     lam=1e5,
     p=0.01,
     n_jobs=-1,
     return_baseline=False,
-    **alskwargs
+    baseline_method='als',
+    **alskwargs,
 ):
     """
     Pixel-wise ALS baseline subtraction for Raman hyperspectral cube.
@@ -384,6 +411,10 @@ def pixelwise_als_baseline(
         Number of parallel jobs (-1 = all cores)
     return_baseline : bool
         If True, also return baseline cube
+    baseline_method : str
+        'als' or 'derpsals' or 'arpls'
+    alskwargs : dict
+        Keyword arguments for baseline
 
     Returns
     -------
@@ -395,10 +426,21 @@ def pixelwise_als_baseline(
     spectra = cube.reshape(-1, n_spec)
 
     # Parallel ALS
-    baselines = Parallel(n_jobs=n_jobs, prefer="threads")(
-        delayed(als_baseline_1d)(spec, lam, p, **alskwargs)
-        for spec in spectra
-    )
+    if baseline_method == 'als':
+        baselines = Parallel(n_jobs=n_jobs, prefer="threads")(
+            delayed(als_baseline_1d)(spec, lam, p, **alskwargs)
+            for spec in spectra
+        )
+    elif baseline_method == 'arpls':
+        baselines = Parallel(n_jobs=n_jobs, prefer="threads")(
+            delayed(arpls_baseline_1d)(spec, lam, **alskwargs)
+            for spec in spectra
+        )
+    elif baseline_method == 'derpsals':
+        baselines = Parallel(n_jobs=n_jobs, prefer="threads")(
+            delayed(derpsals_baseline_1d)(spec, lam, p, **alskwargs)
+            for spec in spectra
+        )
 
     baseline_cube = np.array(baselines).reshape(nx, ny, n_spec)
     corrected_cube = cube - baseline_cube
