@@ -29,6 +29,7 @@ from sklearn.decomposition import PCA
 
 def sklearn_PCA(data,ScreePlot=False,n_PCs=None,
                 saveplot=False, figname=None, savepath=None,
+                threshold=None,
                 *args, **kwargs):
     """
     Perform PCA using sklearn on hyperspectral data.
@@ -51,35 +52,64 @@ def sklearn_PCA(data,ScreePlot=False,n_PCs=None,
     pca.fit(flat_data)
     # save all components in an array
     component_spectra = pca.components_
+
     if ScreePlot:
-        # plot the explained variance ratio vs the number of components
         EVR = pca.explained_variance_ratio_
-        N_components = np.arange(1, len(EVR) + 1)
+        Acc_EVR = np.cumsum(EVR)
+
+        # component indices (1-based)
+        N = np.arange(1, len(EVR) + 1)
+
         if n_PCs is not None:
-            N_components = N_components[:n_PCs]
             EVR = EVR[:n_PCs]
-        plt.plot(N_components, EVR, 'ro', markersize=5)
-        # using majorlocator and minor locator to set the x-axis ticks
-        plt.gca().xaxis.set_major_locator(MultipleLocator(2))
-        plt.gca().xaxis.set_minor_locator(AutoMinorLocator(1))
-        plt.tick_params(which='both', direction='in', right=True, top=True)
-        # plt.yticks(fontsize=10)
-        plt.xlabel('Principal component index')
-        plt.ylabel('Explained variance ratio')
-        plt.yscale('log')
-        plt.title('Explained variance ratio by PCA')
-        plt.tight_layout()
+            Acc_EVR = Acc_EVR[:n_PCs]
+            N = N[:n_PCs]
+
+        # --- plotting ---
+        fig, ax1 = plt.subplots()
+
+        # left y-axis: explained variance ratio
+        ax1.plot(N, EVR, 'ro', markersize=5, label='Explained variance ratio')
+        ax1.set_xlabel('Principal component index')
+        ax1.set_ylabel('Explained variance ratio', color='r')
+        ax1.set_yscale('log')
+        ax1.tick_params(axis='y', labelcolor='r')
+
+        ax1.xaxis.set_major_locator(MultipleLocator(2))
+        ax1.xaxis.set_minor_locator(AutoMinorLocator(1))
+        ax1.tick_params(which='both', direction='in', right=True, top=True)
+
+        # right y-axis: accumulated variance ratio
+        ax2 = ax1.twinx()
+        ax2.plot(N, Acc_EVR, 'bo-', markersize=4, label='Accumulated variance ratio')
+        ax2.set_ylabel('Accumulated explained variance ratio', color='b')
+        ax2.tick_params(axis='y', labelcolor='b')
+        #ax2.set_ylim(0, 1.05)
+
+        # threshold line
+        if threshold is not None:
+            ax2.axhline(threshold, color='gray', linestyle='--', linewidth=1)
+
+        # title & layout
+        fig.suptitle('PCA explained and accumulated variance')
+        fig.tight_layout()
+
+        # save
         if saveplot:
             if figname is None:
-                print("Warning: No figure name provided, using default 'PCA_scree_plot'.")
                 savename = 'PCA_scree_plot'
+                print("Warning: No figure name provided, using default 'PCA_scree_plot'.")
             else:
                 savename = figname
+
             if savepath is not None:
-                plt.savefig(savepath+savename+'.png', transparent=True, dpi=300)
+                plt.savefig(savepath + savename + '.png',
+                            transparent=True, dpi=300)
             else:
-                plt.savefig(savename+'.png', transparent=True, dpi=300)
+                plt.savefig(savename + '.png',
+                            transparent=True, dpi=300)
                 print("Warning: No save path provided, saving in the current directory.")
+
         plt.show()
 
     return pca, component_spectra
@@ -227,7 +257,7 @@ def plot_PCs_combined(component_spectra, x_axis, component_idx,
             print("Warning: No save path provided, saving in the current directory.")
 
     plt.show()
-#%% Plot accumulated variance ratio
+#%% Plot accumulated variance ratio (there is a new version merged with sklearn_PCA())
 def plot_accumulated_variance(pca,component_idx=20,savefig=False, figname=None, savepath=None,
                               fontsize=12, labelpad=12,threshold=0.95):
     """
