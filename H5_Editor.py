@@ -120,7 +120,7 @@ def attribute2rename(h5_path, node_path, old_name, new_name):
 
         # Copy value
         attrs._f_rename(old_name, new_name)
-#%% extract data, wavelength and axes info from an H5 file of hyperspectral data
+#%% extract data, wavelength and axes info from an H5 file of HORIBA hyperspectral data
 def data_extract(h5_path, data_loc='/Datas/Data1', metadata_loc=None,
                  wl_attr='Axis1',x_axis_attr='Axis2',decode=True, y_scale = False, y_axis_attr='Axis3'):
     """
@@ -328,7 +328,7 @@ def array2add(h5_path, group_path, array_name, data, *, overwrite=False):
 
     # File is GUARANTEED closed here
 
-#%% spectroscopy data extraction
+#%% spectroscopy data extraction from h5 file of HORIBA
 def spc_extract(h5_path, data_loc='/Datas/Data1', metadata_loc=None):
     """
     Function to extract data, signal axis and pixel size from an HDF5 (h5) file
@@ -352,3 +352,43 @@ def spc_extract(h5_path, data_loc='/Datas/Data1', metadata_loc=None):
     wavelength_axis = {'Wavelength':wavelength, 'Unit':wavelength_unit}
     h5_file.close()
     return data, wavelength_axis
+
+#%% general array & attribute extraction function
+def array2extract(h5_path, array_loc):
+    """
+
+    Parameters
+    ----------
+    h5_path:
+
+    array_loc:
+
+    ----------
+    :return data
+    """
+    with tables.open_file(h5_path, mode='r') as h5:
+        node = h5.get_node(array_loc)
+        data = node.read()
+
+    return data
+
+def attribute2extract(h5_path, attribute_loc, attribute_name):
+    """
+    Parameters
+    -------------------
+    h5_path:
+
+    attribute_loc:
+
+    attribute_name:
+
+    ---------------------
+    :return value
+    """
+
+    with tables.open_file(h5_path, mode='r') as h5:
+        node = h5.get_node(attribute_loc)
+
+        value = node.attrs[attribute_name]
+
+    return value
