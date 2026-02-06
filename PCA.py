@@ -29,7 +29,7 @@ from sklearn.decomposition import PCA
 
 def sklearn_PCA(data,ScreePlot=False,n_PCs=None,
                 saveplot=False, figname=None, savepath=None,
-                threshold=None,
+                threshold=None,major_locator=2,minor_locator=1,
                 *args, **kwargs):
     """
     Perform PCA using sklearn on hyperspectral data.
@@ -75,8 +75,8 @@ def sklearn_PCA(data,ScreePlot=False,n_PCs=None,
         ax1.set_yscale('log')
         ax1.tick_params(axis='y', labelcolor='r')
 
-        ax1.xaxis.set_major_locator(MultipleLocator(2))
-        ax1.xaxis.set_minor_locator(AutoMinorLocator(1))
+        ax1.xaxis.set_major_locator(MultipleLocator(major_locator))
+        ax1.xaxis.set_minor_locator(AutoMinorLocator(minor_locator))
         ax1.tick_params(which='both', direction='in', right=True, top=True)
 
         # right y-axis: accumulated variance ratio
