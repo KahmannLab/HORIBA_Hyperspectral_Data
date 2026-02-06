@@ -182,6 +182,55 @@ def largest_valid_rectangle(mask):
 
     return (ymin, ymax, xmin, xmax)
 
+def largest_true_rectangle(mask: np.ndarray):
+    """
+    Find the largest axis-aligned rectangle consisting entirely of True.
+
+    Parameters
+    ----------
+    mask : (H, W) boolean array
+
+    Returns
+    -------
+    bbox : tuple or None
+        (ymin, ymax, xmin, xmax) using NumPy half-open indexing,
+        or None if no True pixel exists.
+    """
+    H, W = mask.shape
+    heights = np.zeros(W, dtype=int)
+
+    best_area = 0
+    best_bbox = None
+
+    for y in range(H):
+        # Build histogram of consecutive True pixels above this row
+        heights = heights + 1
+        heights[~mask[y]] = 0
+
+        # Monotonic stack to find largest rectangle in histogram
+        stack = []
+        for x in range(W + 1):
+            cur_h = heights[x] if x < W else 0
+
+            start = x
+            while stack and stack[-1][1] > cur_h:
+                idx, h = stack.pop()
+                area = h * (x - idx)
+
+                if area > best_area:
+                    best_area = area
+                    ymin = y - h + 1
+                    ymax = y + 1
+                    xmin = idx
+                    xmax = x
+                    best_bbox = (ymin, ymax, xmin, xmax)
+
+                start = idx
+
+            stack.append((start, cur_h))
+
+    return best_bbox
+
 def crop_with_mask(data, mask):
     """
     Crop 2D or 3D data using a bounding box.
@@ -198,7 +247,8 @@ def crop_with_mask(data, mask):
     cropped_data : ndarray
         Cropped data with same dimensionality as input
     """
-    bbox = largest_valid_rectangle(mask)
+    #bbox = largest_valid_rectangle(mask)
+    bbox = largest_true_rectangle(mask)
     #print(bbox)
     if bbox is None:
         raise ValueError("bbox is None")
